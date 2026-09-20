@@ -72,3 +72,26 @@ Remaining to finish multi-project DPA:
 - Shared `projects.json` so launcher/Conductor/DPA read one registry.
 - Minor: agents sometimes write em dashes in their output; a project's PROJECT.md
   can forbid it if it matters.
+
+## Closed off (escalation triage, DPA controls, HDS migration, overseer retirement)
+
+- **Always-on overseer retired** in favour of the trio: deterministic daemon +
+  DPA dashboard + one-shot reasoning. No always-on AI supervisor is needed.
+- **Escalation triage**: on a double kick-back the generic daemon quarantines the
+  feature and calls a one-shot Haiku (`reason()`) to write a triaged escalation
+  (what happened, likely cause, options + recommendation). Verified live.
+- **DPA write-controls**: start/stop/restart a project's daemon from the
+  dashboard, via a scoped sudoers rule (dpa-underseer@ only) + slug validation.
+  Verified live on the sandbox.
+- **HDS migration, config only (NOT run)**: `/var/www/dpa-projects/hds/project.json`
+  carries HDS's full context (stack, Swedish, communes, six user types, palette),
+  registered in projects.json so the DPA dashboard shows it read-only. repo_root
+  is a deliberate PLACEHOLDER and autonomy is 1, so it cannot run against real HDS
+  code until Patch sets the path and starts it deliberately. HDS's own bespoke
+  pipeline is untouched. Live HDS, its code, and its GitHub repos were NOT touched.
+
+## Genuinely remaining
+- **Actually switching HDS over** (set the real repo path, choose autonomy, start
+  the daemon, run a cycle): a deliberate decision for Patch, not done here.
+- **Converge Conductor onto the shared framework** (it still carries its own
+  helper copies; works, left untouched to avoid live surgery).
