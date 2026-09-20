@@ -1,13 +1,20 @@
-# Scoped sudo rule so the DPA dashboard (running as the web service user) can
-# start/stop a project's pipeline daemon, and NOTHING else.
+# Scoped sudo for D'everyman. The web GUIs run as the service user; this grants
+# them ONLY the systemctl verbs they need on their own units, plus host reboot,
+# and NOTHING else. Every argument the apps pass (project slug, service name) is
+# validated against an allowlist in PHP before sudo is ever called, and sudo
+# matches each command string below exactly.
 #
 #   sudo cp deveryman-dpa.sudoers.example /etc/sudoers.d/deveryman-dpa
-#   # edit the user and systemctl path to match this host, then:
+#   sudo nano /etc/sudoers.d/deveryman-dpa        # set the web user + systemctl path
 #   sudo chmod 440 /etc/sudoers.d/deveryman-dpa
-#   sudo visudo -c -f /etc/sudoers.d/deveryman-dpa   # validate
-#
-# The dashboard only ever runs `sudo systemctl {start,stop,restart}
-# dpa-underseer@<slug>` after validating <slug> against projects.json, and the
-# rule below limits sudo to exactly those three verbs on dpa-underseer@ instances.
+#   sudo visudo -c -f /etc/sudoers.d/deveryman-dpa   # validate before trusting it
 
-<web-user> ALL=(root) NOPASSWD: /usr/bin/systemctl start dpa-underseer@*.service, /usr/bin/systemctl stop dpa-underseer@*.service, /usr/bin/systemctl restart dpa-underseer@*.service
+# Per-project pipeline daemons: start/stop/restart (DPA dashboard control page)
+# plus enable/disable so a project that is running keeps running across a reboot.
+<web-user> ALL=(root) NOPASSWD: /usr/bin/systemctl start dpa-underseer@*.service, /usr/bin/systemctl stop dpa-underseer@*.service, /usr/bin/systemctl restart dpa-underseer@*.service, /usr/bin/systemctl enable dpa-underseer@*.service, /usr/bin/systemctl disable dpa-underseer@*.service
+
+# Core D'everyman services: restart only, from the launcher's System page.
+<web-user> ALL=(root) NOPASSWD: /usr/bin/systemctl restart conductor.service, /usr/bin/systemctl restart conductor-daemon.service, /usr/bin/systemctl restart dpa-dashboard.service, /usr/bin/systemctl restart deveryman-launcher.service
+
+# Reboot the host (launcher System page, behind a typed confirmation).
+<web-user> ALL=(root) NOPASSWD: /usr/bin/systemctl reboot

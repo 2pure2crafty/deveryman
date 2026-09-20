@@ -20,6 +20,18 @@ if (!isset($projects[$slug]) || !in_array($action, ['start', 'stop', 'restart'],
     exit;
 }
 
-fw_run_cmd(['sudo', 'systemctl', $action, "dpa-underseer@{$slug}.service"]);
+$unit = "dpa-underseer@{$slug}.service";
+// start/stop also enable/disable so the daemon's running state survives a reboot:
+// systemd brings an enabled instance back up on boot and leaves a disabled one
+// down. restart leaves the enable state untouched.
+if ($action === 'start') {
+    fw_run_cmd(['sudo', 'systemctl', 'enable', $unit]);
+    fw_run_cmd(['sudo', 'systemctl', 'start', $unit]);
+} elseif ($action === 'stop') {
+    fw_run_cmd(['sudo', 'systemctl', 'stop', $unit]);
+    fw_run_cmd(['sudo', 'systemctl', 'disable', $unit]);
+} else { // restart
+    fw_run_cmd(['sudo', 'systemctl', 'restart', $unit]);
+}
 header('Location: ' . $back);
 exit;
