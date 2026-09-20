@@ -291,6 +291,56 @@ def kill_agent(p: "Project", stage: str, wrap_up: bool = True):
 
 
 # --------------------------------------------------------------------------- #
+# Reasoning + escalation (the deterministic supervisor, with one-shot judgment)
+# --------------------------------------------------------------------------- #
+
+def reason(prompt: str, stdin: str = "", timeout: int = 120) -> str | None:
+    """One-shot headless reasoning (Haiku by default). Returns text or None.
+
+    This is how the deterministic daemon does the little judgment the old
+    always-on AI overseer used to do: spin up a cheap one-shot model only when
+    something non-mechanical happens, instead of paying for an always-on agent.
+    """
+    model = p_reason_model()
+    try:
+        r = subprocess.run(["claude", "--model", model, "-p", prompt],
+                           input=stdin, capture_output=True, text=True, timeout=timeout)
+    except Exception:
+        return None
+    out = (r.stdout or "").strip()
+    return out or None
+
+
+def p_reason_model() -> str:
+    return "haiku"
+
+
+def escalate(p: "Project", reason_str: str, detail: str = ""):
+    """Write a triaged escalation for Patch and block. The daemon runs a one-shot
+    reasoning pass to summarize what happened and propose options, so what reaches
+    Patch is already triaged (not a raw dump)."""
+    inbox = p.docs / "dev-inbox"
+    ctx = (f"Reason: {reason_str}\nDetail: {detail}\n\n"
+           f"Pipeline state:\n{p.state_file.read_text() if p.state_file.exists() else ''}\n")
+    if inbox.exists():
+        for f in sorted(inbox.glob("*.md")):
+            ctx += f"\n===== {f.name} =====\n{f.read_text()[:4000]}\n"
+    triage = reason(
+        "You are triaging a stuck automated build pipeline for a human (Patch). "
+        "From the situation below, write a short escalation: (1) what happened, in "
+        "one or two sentences; (2) the most likely cause; (3) two or three concrete "
+        "options with a recommendation. Concise and practical. Markdown, no preamble.",
+        ctx)
+    body = triage or f"(Triage unavailable.)\n\nReason: {reason_str}\nDetail: {detail}"
+    stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    esc = p.docs / "escalation.md"
+    entry = f"## Escalation - {stamp}\n\n{body}\n\n**Status:** AWAITING PATCH\n\n---\n\n"
+    prev = esc.read_text() if esc.exists() else ""
+    esc.write_text(entry + prev)
+    log(p, f"ESCALATED (triaged): {reason_str}")
+
+
+# --------------------------------------------------------------------------- #
 # State machine
 # --------------------------------------------------------------------------- #
 
@@ -357,9 +407,21 @@ def handle(p: "Project", state: dict, items: list):
         return
 
     if status in ("KICKED BACK", "KICKBACK"):
-        target = p.kickback.get(stage, p.stages[0])
         count = int(state.get("kick_back_count", "0") or "0") + 1
         kill_agent(p, stage)
+        if count >= 2:
+            # Double kick-back: stop looping. Quarantine the feature and escalate
+            # to Patch with a triaged summary (the one-shot judgment step).
+            active = [i for i in items if i["status"] == "ACTIVE"]
+            if active:
+                update_queue_status(p, active[0]["id"], "QUARANTINED")
+            escalate(p, f"Feature '{feature}' double kicked-back at {stage}",
+                     f"Kicked back {count} times; quarantined pending your call.")
+            write_state(p, {"current_stage": "none", "stage_status": "BLOCKED",
+                            "current_feature": "none", "kick_back_count": str(count),
+                            "waiting_for": "PATCH"})
+            return
+        target = p.kickback.get(stage, p.stages[0])
         note = f"Kicked back from {stage}. See the feedback in {p.docs}/dev-inbox/."
         write_state(p, {"current_stage": target, "stage_status": "IN PROGRESS",
                         "kick_back_count": str(count)})
