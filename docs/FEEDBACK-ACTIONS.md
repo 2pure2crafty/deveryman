@@ -1,5 +1,10 @@
 # Action plan: responding to the first external review
 
+> **Status: all themes A-F actioned and pushed.** Remaining under themes are
+> ongoing/noted (dashboard token totals with a cache, richer summaries). The one
+> item needing Patch is the origin-story number, now answered and in the README.
+
+
 A reviewer (playing "the cousin who asked how Patch is so economical with tokens",
 the person this was built to be shared with) reviewed the public repo a few
 commits back. Most points still stand. This maps each to an action.
