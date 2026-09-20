@@ -20,7 +20,7 @@ Type=simple
 # Same unprivileged user that owns the agent dirs and can drive tmux + claude.
 User=change-me
 Group=change-me
-ExecStart=/usr/bin/php /opt/conductor/conductor-daemon.php
+ExecStart=/usr/bin/php /opt/deveryman/conductor/conductor-daemon.php
 Restart=always
 RestartSec=5
 # systemd creates and owns these for the service user:

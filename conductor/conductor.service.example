@@ -19,7 +19,7 @@ Type=simple
 User=change-me
 Group=change-me
 # Point ExecStart at this repo's public/ directory on the target server.
-ExecStart=/usr/bin/php -S 127.0.0.1:7682 -t /opt/conductor/public
+ExecStart=/usr/bin/php -S 127.0.0.1:7682 -t /opt/deveryman/conductor/public
 Restart=on-failure
 # Optional: keep the deployment config path explicit if it isn't the default.
 #Environment=CONDUCTOR_CONFIG=/etc/default/conductor
