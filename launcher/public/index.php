@@ -42,6 +42,13 @@ if (empty($projects)) {
     foreach ($projects as $slug => $p) {
         $caps = $p['capabilities'] ?? [];
         echo '<div class="card"><strong>' . fw_h($p['label'] ?? $slug) . '</strong>';
+        // Capability chips + live DPA daemon status at a glance.
+        if (!empty($caps['conductor'])) echo '<span class="pill on">Conductor</span>';
+        if (!empty($caps['dpa'])) {
+            [, $st] = fw_run_cmd(['systemctl', 'is-active', "dpa-underseer@{$slug}.service"]);
+            $running = trim($st) === 'active';
+            echo '<span class="pill ' . ($running ? 'on' : 'off') . '">DPA ' . ($running ? 'running' : 'idle') . '</span>';
+        }
         if (!empty($p['path'])) echo '<div class="meta">' . fw_h($p['path']) . '</div>';
         // Conductor lens (only if the project offers it).
         if (!empty($caps['conductor']) && $conductorUrl !== '') {
