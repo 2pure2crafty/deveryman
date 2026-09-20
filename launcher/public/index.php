@@ -21,6 +21,8 @@ if (is_file($projectsPath)) {
 fw_header('Home');
 echo "<h1>D'everyman</h1>";
 echo '<p class="desc">Your projects, through either lens: Conductor (manual agents) or DPA (the pipeline).</p>';
+echo '<a class="btn" style="background:#444" href="setup.php">AI credentials</a>';
+echo '<a class="btn" style="background:#444" href="import.php">Import a repo</a>';
 
 // Aggregate token view
 $tot = fw_total_tokens();

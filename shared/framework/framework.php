@@ -49,15 +49,46 @@ function fw_require_auth(): void {
     }
 }
 
-/** Run an argv command (no shell). Returns [exit, stdout, stderr]. */
-function fw_run_cmd(array $argv, ?string $cwd = null): array {
-    $d = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+/** Run an argv command (no shell), optionally with stdin and a timeout.
+ *  Returns [exit, stdout, stderr]. On timeout: exit 124. */
+function fw_run_cmd(array $argv, ?string $cwd = null, string $stdin = '', int $timeout = 0): array {
+    $d = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
     $p = proc_open($argv, $d, $pipes, $cwd);
     if (!is_resource($p)) return [1, '', 'failed to start'];
-    $out = stream_get_contents($pipes[1]);
-    $err = stream_get_contents($pipes[2]);
+    if ($stdin !== '') fwrite($pipes[0], $stdin);
+    fclose($pipes[0]);
+    if ($timeout <= 0) {
+        $out = stream_get_contents($pipes[1]);
+        $err = stream_get_contents($pipes[2]);
+        fclose($pipes[1]); fclose($pipes[2]);
+        return [proc_close($p), $out, $err];
+    }
+    stream_set_blocking($pipes[1], false);
+    stream_set_blocking($pipes[2], false);
+    $out = ''; $err = ''; $deadline = microtime(true) + $timeout;
+    while (true) {
+        $out .= stream_get_contents($pipes[1]);
+        $err .= stream_get_contents($pipes[2]);
+        $st = proc_get_status($p);
+        if (!$st['running']) break;
+        if (microtime(true) > $deadline) {
+            proc_terminate($p, 9);
+            fclose($pipes[1]); fclose($pipes[2]); proc_close($p);
+            return [124, $out, $err . "\n[timeout]"];
+        }
+        usleep(50000);
+    }
+    $out .= stream_get_contents($pipes[1]);
+    $err .= stream_get_contents($pipes[2]);
     fclose($pipes[1]); fclose($pipes[2]);
     return [proc_close($p), $out, $err];
+}
+
+/** One-shot headless reasoning via the claude CLI (Haiku). Returns text or null. */
+function fw_reason(string $prompt, string $stdin = '', int $timeout = 120): ?string {
+    [$exit, $out] = fw_run_cmd(['claude', '--model', 'haiku', '-p', $prompt], null, $stdin, $timeout);
+    $out = trim($out);
+    return ($exit === 0 && $out !== '') ? $out : null;
 }
 
 /** Shared dark mobile shell. $home is a link back to the launcher/dashboard. */
