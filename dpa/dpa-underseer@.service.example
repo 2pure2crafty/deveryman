@@ -1,0 +1,26 @@
+# DPA underseer (pipeline daemon) systemd template, one instance per project.
+#
+#   sudo cp dpa-underseer@.service.example /etc/systemd/system/dpa-underseer@.service
+#   # edit User/Group/paths, then, per project (instance name = project name):
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now dpa-underseer@<project>.service
+#
+# This is the deterministic "persistent supervisor": systemd keeps the mechanical
+# pipeline daemon alive. Judgment work (escalation triage, etc.) is delegated to a
+# one-shot reasoning call when needed, not an always-on AI. The instance name
+# resolves the project's config at /var/www/dpa-projects/<project>/project.json.
+
+[Unit]
+Description=DPA underseer (pipeline daemon) for project %i
+After=network.target
+
+[Service]
+Type=simple
+User=change-me
+Group=change-me
+ExecStart=/usr/bin/python3 /opt/deveryman/dpa/underseer.py /var/www/dpa-projects/%i/project.json
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
