@@ -47,3 +47,16 @@ everyman/
 
 The project is the primary entity; Conductor and DPA are capabilities you apply
 to it. Both are built to be generic / multi-project.
+
+## Access points (this deployment)
+
+Each app binds to 127.0.0.1 and is exposed on its own Tailscale HTTPS port:
+
+| App               | Local            | Tailscale port |
+| ----------------- | ---------------- | -------------- |
+| Everyman launcher | 127.0.0.1:7684   | `:8445` (front door) |
+| Conductor         | 127.0.0.1:7682   | `:8443`        |
+| DPA dashboard     | 127.0.0.1:7683   | `:8444`        |
+
+The launcher is the intended entry point; it links out to the other two.
+

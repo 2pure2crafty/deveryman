@@ -5,9 +5,11 @@ log into Everyman and from there you operate on your projects through whichever
 capability fits, Conductor (manual, on-demand agents) or DPA (the automated
 build pipeline). This repo is the monorepo that holds all of it.
 
-> Status: design + roadmap. Nothing here is built yet. Conductor already exists
-> and runs (currently at /var/www/hdp/agents/conductor); it migrates into this
-> repo during the build. This doc is the agreed structure to build toward.
+> Status: Phases 1-3 done and verified; Phase 4 partially done (shared framework
+> + read-only DPA dashboard live); Phase 5 launcher done. The remaining Phase 4
+> work (underseer multi-project refactor, pipeline state consolidation, DPA
+> write-controls) is gated on un-pausing the pipeline for live verification and
+> is sub-planned in `FUTURE.md`. Conductor has migrated into this repo.
 
 ## The mental model
 
