@@ -76,19 +76,39 @@ a glance. Concrete first steps:
   Fold Conductor's duplicated helpers (auth, render, run_cmd, token reader) onto
   `shared/framework`, carefully, keeping the live service working.
 
-## Needs Patch's input (not code)
+## Theme F: Import a repo (new, from the user-journey discussion)
 
-- **The origin-story number.** The reviewer asked what actually triggered the
-  "I'm not efficient at all" realization, "was there a number that surprised you?"
-  If there is a real number, it would sharpen the README origin story. Patch to
-  provide.
+Self-hosting means a user arrives with a fresh VPS and their own projects. Once
+they have `gh` + credentials, they should be able to bring a repo IN.
 
-## Proposed order
+- **F1. Import-repo flow + bot.** A button that takes a git repo (URL, or one of
+  the user's own via `gh`), and a deterministic import handler that clones it into
+  D'everyman's projects structure, registers it in `projects.json`, and lets the
+  user enable Conductor and/or DPA on it. A one-shot reasoning call can inspect
+  the clone and pre-fill a DPA `project.json` context (tech stack, conventions).
+  "Our own bot that makes sure it lands in the file structure correctly."
 
-1. **E1** convergence (foundational cleanup; makes the framework the real base).
-2. **A5 + A4 + A3 + A6** the documentation quick-wins that surface things that
-   already exist (thresholds, memory discipline, when-to-use, registries).
-3. **B1** package the memory-kit as liftable.
-4. **A1 + A2** the full install + usage guide (the biggest doc piece).
-5. **C1** the credentials/setup screen.
-6. **D1 + D2** the "more at a glance" pass (ongoing).
+## Resolved from the user-journey discussion
+
+- **Origin story:** the real trigger was a PERSISTENT agent that forces a full
+  context re-read every time you come back to it. That inefficiency is exactly
+  what the memory discipline fixes. Use this in the README (done in Theme A).
+- **Self-host only.** It is never a hosted service others log into (private,
+  locked down). The install story is: fresh VPS -> get the repo on it -> run ->
+  enter AI credentials -> import your projects. Install docs target that, no
+  "use my instance" path.
+- **Docker:** a future consideration (Patch is asking the reviewer about it). Not
+  built now; revisit as a packaging option later.
+
+## Proposed order (revised: front-load the shareable/onboarding story, do the
+## risky live refactor last)
+
+1. **A5 + A4 + A3 + A6** documentation quick-wins (surface what already exists:
+   thresholds, memory discipline, when-to-use, self-host/registry clarity).
+2. **B1** package the memory-kit as liftable.
+3. **A1 + A2** the full install + usage guide (the reviewer's loudest concern).
+4. **C1** the credentials / first-run setup screen.
+5. **F1** the import-repo flow + bot.
+6. **E1** converge Conductor onto the shared framework (careful, live service; do
+   it once the additive work is stable).
+7. **D1 + D2** the "more at a glance" pass (ongoing).
