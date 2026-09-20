@@ -1,0 +1,19 @@
+{
+  "projects": {
+    "sandbox": {
+      "label": "Sandbox",
+      "path": "/var/www/dpa-projects/sandbox",
+      "capabilities": {
+        "dpa": { "config": "/var/www/dpa-projects/sandbox/project.json" }
+      }
+    },
+    "example-app": {
+      "label": "Example app",
+      "path": "/var/www/agents/example-app",
+      "capabilities": {
+        "conductor": true,
+        "dpa": { "config": "/var/www/dpa-projects/example-app/project.json" }
+      }
+    }
+  }
+}

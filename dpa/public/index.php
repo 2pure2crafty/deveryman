@@ -3,47 +3,69 @@ declare(strict_types=1);
 require __DIR__ . '/../lib.php';
 fw_require_auth();
 
-$running   = dpa_daemon_running();
-$enabled   = dpa_daemon_enabled();
-$config    = dpa_read('current-config.md');
-$escalation = dpa_read('escalation.md');
-$queue     = dpa_find('build-queue.md');
-$state     = dpa_find('pipeline-state.md');
-$logTail   = dpa_log_tail(30);
+$projects = dpa_projects();
+$slug = $_GET['project'] ?? '';
 
-fw_header('Pipeline', '/');
-echo '<h1>DPA pipeline</h1>';
-
-echo '<div class="card"><strong>Daemon (underseer)</strong>'
-    . '<span class="pill ' . ($running ? 'on' : 'off') . '">' . ($running ? 'running' : 'stopped') . '</span>'
-    . '<span class="pill ' . ($enabled ? 'on' : 'off') . '">auto-revive ' . ($enabled ? 'on' : 'off') . '</span>'
-    . '</div>';
-
-if (trim($escalation) !== '') {
-    echo '<div class="card" style="border-color:#b45309"><strong>Escalation, needs Patch</strong>'
-        . '<pre>' . fw_h(trim($escalation)) . '</pre></div>';
+/* ---- project list ---- */
+if ($slug === '' || !isset($projects[$slug])) {
+    fw_header('DPA', '/');
+    echo '<h1>DPA pipelines</h1>';
+    if (empty($projects)) {
+        echo '<p class="meta">No DPA-capable projects in projects.json.</p>';
+    } else {
+        foreach ($projects as $s => $proj) {
+            $active = dpa_daemon_active($s);
+            echo '<div class="card"><strong>' . fw_h($proj['label'] ?? $s) . '</strong>'
+                . '<span class="pill ' . ($active ? 'on' : 'off') . '">daemon ' . ($active ? 'running' : 'stopped') . '</span>'
+                . '<div class="meta">' . fw_h($proj['path'] ?? '') . '</div>'
+                . '<a class="btn" href="index.php?project=' . fw_h($s) . '">View pipeline</a></div>';
+        }
+    }
+    fw_footer();
+    exit;
 }
 
-echo '<h2>Active cycle</h2>';
-echo trim($config) !== ''
-    ? '<pre>' . fw_h(trim($config)) . '</pre>'
-    : '<p class="meta">No active cycle config (current-config.md not found or empty).</p>';
+/* ---- one project's pipeline ---- */
+$proj = $projects[$slug];
+$cfg  = dpa_config($proj);
+fw_header('DPA: ' . ($proj['label'] ?? $slug), '/');
+echo '<a class="back" href="index.php">&larr; DPA pipelines</a>';
+echo '<h1>' . fw_h($proj['label'] ?? $slug) . ' pipeline</h1>';
 
-echo '<h2>Build queue</h2>';
-echo trim($queue) !== ''
-    ? '<pre>' . fw_h(trim($queue)) . '</pre>'
-    : '<p class="meta">No build queue found.</p>';
+if ($cfg === null) {
+    echo '<p class="meta">No project.json found for this project ('
+        . fw_h($proj['capabilities']['dpa']['config'] ?? '') . ').</p>';
+    fw_footer();
+    exit;
+}
 
+$docs = dpa_docs_dir($cfg);
+$active = dpa_daemon_active($slug);
+$stages = $cfg['stages'] ?? [];
+
+echo '<div class="card"><strong>Daemon</strong>'
+    . '<span class="pill ' . ($active ? 'on' : 'off') . '">' . ($active ? 'running' : 'stopped') . '</span>'
+    . '<div class="meta">stages: ' . fw_h(implode(' -> ', $stages)) . ' &middot; autonomy ' . fw_h((string)($cfg['autonomy_level'] ?? '')) . '</div>'
+    . '<div class="meta">to run: <code>systemctl start dpa-underseer@' . fw_h($slug) . '</code></div>'
+    . '</div>';
+
+$state = dpa_read_doc($docs, 'pipeline-state.md');
 echo '<h2>Pipeline state</h2>';
-echo trim($state) !== ''
-    ? '<pre>' . fw_h(trim($state)) . '</pre>'
-    : '<p class="meta">No canonical pipeline-state.md found (currently scattered per-stage; consolidated in the multi-project refactor).</p>';
+echo trim($state) !== '' ? '<pre>' . fw_h(trim($state)) . '</pre>' : '<p class="meta">No pipeline-state.md.</p>';
 
+$queue = dpa_read_doc($docs, 'build-queue.md');
+echo '<h2>Build queue</h2>';
+echo trim($queue) !== '' ? '<pre>' . fw_h(trim($queue)) . '</pre>' : '<p class="meta">No build queue.</p>';
+
+$esc = dpa_read_doc($docs, 'escalation.md');
+if (trim($esc) !== '') {
+    echo '<h2 style="color:#f59e0b">Escalation</h2><pre>' . fw_h(trim($esc)) . '</pre>';
+}
+
+$logTail = dpa_log_tail($cfg, 30);
 echo '<h2>Daemon log (recent)</h2>';
-echo trim($logTail) !== ''
-    ? '<pre>' . fw_h($logTail) . '</pre>'
-    : '<p class="meta">No underseer.log yet.</p>';
+echo trim($logTail) !== '' ? '<pre>' . fw_h($logTail) . '</pre>' : '<p class="meta">No log yet.</p>';
 
-echo '<p class="meta">Read-only. Cycle controls (start/stop, approve escalations, daemon toggle) '
-    . 'come with the multi-project refactor, when the pipeline is un-paused.</p>';
+echo '<p class="meta">Read-only. Cycle controls (start/stop the daemon, approve escalations) '
+    . 'need a scoped sudo rule for systemctl; see docs/FUTURE.md.</p>';
 fw_footer();

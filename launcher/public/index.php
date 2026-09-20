@@ -9,12 +9,12 @@ fw_require_auth();
 $conductorUrl = fw_config_get('DEVERYMAN_CONDUCTOR_URL');
 $dpaUrl       = fw_config_get('DEVERYMAN_DPA_URL');
 
-// Project list comes from Conductor's registry for now (the shared projects.json
-// unification is a later step). Each project offers Conductor + DPA lenses.
-$registryPath = '/var/www/deveryman/conductor/registry.json';
+// Project list comes from the shared projects.json (the single registry both
+// capabilities read). Each project declares which lenses it offers.
+$projectsPath = __DIR__ . '/../../projects.json';
 $projects = [];
-if (is_file($registryPath)) {
-    $reg = json_decode((string) file_get_contents($registryPath), true);
+if (is_file($projectsPath)) {
+    $reg = json_decode((string) file_get_contents($projectsPath), true);
     $projects = $reg['projects'] ?? [];
 }
 
@@ -38,19 +38,17 @@ if (empty($projects)) {
     echo '<p class="meta">No projects registered yet.</p>';
 } else {
     foreach ($projects as $slug => $p) {
+        $caps = $p['capabilities'] ?? [];
         echo '<div class="card"><strong>' . fw_h($p['label'] ?? $slug) . '</strong>';
-        if (!empty($p['description'])) {
-            echo '<div class="desc">' . fw_h(mb_strimwidth($p['description'], 0, 120, '...')) . '</div>';
+        if (!empty($p['path'])) echo '<div class="meta">' . fw_h($p['path']) . '</div>';
+        // Conductor lens (only if the project offers it).
+        if (!empty($caps['conductor']) && $conductorUrl !== '') {
+            echo '<a class="btn" href="' . fw_h(rtrim($conductorUrl, '/') . '/project.php?slug=' . rawurlencode($slug)) . '">Conductor</a>';
         }
-        // Conductor lens: deep-link to the project page if we have a base URL.
-        $cHref = $conductorUrl !== '' ? rtrim($conductorUrl, '/') . '/project.php?slug=' . rawurlencode($slug) : '';
-        echo $cHref !== ''
-            ? '<a class="btn" href="' . fw_h($cHref) . '">Conductor</a>'
-            : '<span class="pill off">Conductor URL not set</span>';
-        // DPA lens: single pipeline for now (multi-project later).
-        echo $dpaUrl !== ''
-            ? '<a class="btn" style="background:#444" href="' . fw_h($dpaUrl) . '">DPA</a>'
-            : '<span class="pill off">DPA URL not set</span>';
+        // DPA lens (only if the project offers it) -> that project's DPA view.
+        if (!empty($caps['dpa']) && $dpaUrl !== '') {
+            echo '<a class="btn" style="background:#444" href="' . fw_h(rtrim($dpaUrl, '/') . '/index.php?project=' . rawurlencode($slug)) . '">DPA</a>';
+        }
         echo '</div>';
     }
 }
