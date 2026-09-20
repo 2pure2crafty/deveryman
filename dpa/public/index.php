@@ -45,9 +45,19 @@ $stages = $cfg['stages'] ?? [];
 
 echo '<div class="card"><strong>Daemon</strong>'
     . '<span class="pill ' . ($active ? 'on' : 'off') . '">' . ($active ? 'running' : 'stopped') . '</span>'
-    . '<div class="meta">stages: ' . fw_h(implode(' -> ', $stages)) . ' &middot; autonomy ' . fw_h((string)($cfg['autonomy_level'] ?? '')) . '</div>'
-    . '<div class="meta">to run: <code>systemctl start dpa-underseer@' . fw_h($slug) . '</code></div>'
-    . '</div>';
+    . '<div class="meta">stages: ' . fw_h(implode(' -> ', $stages)) . ' &middot; autonomy ' . fw_h((string)($cfg['autonomy_level'] ?? '')) . '</div>';
+$ctl = function (string $action, string $label, string $bg) use ($slug) {
+    return '<form method="post" action="control.php" style="display:inline">'
+        . '<input type="hidden" name="project" value="' . fw_h($slug) . '">'
+        . '<input type="hidden" name="action" value="' . fw_h($action) . '">'
+        . '<button class="btn" type="submit" style="background:' . $bg . '">' . fw_h($label) . '</button></form>';
+};
+if ($active) {
+    echo $ctl('stop', 'Stop daemon', '#b91c1c') . $ctl('restart', 'Restart', '#444');
+} else {
+    echo $ctl('start', 'Start daemon', '#2563eb');
+}
+echo '</div>';
 
 $state = dpa_read_doc($docs, 'pipeline-state.md');
 echo '<h2>Pipeline state</h2>';

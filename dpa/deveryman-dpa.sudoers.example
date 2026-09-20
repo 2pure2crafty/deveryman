@@ -1,0 +1,13 @@
+# Scoped sudo rule so the DPA dashboard (running as the web service user) can
+# start/stop a project's pipeline daemon, and NOTHING else.
+#
+#   sudo cp deveryman-dpa.sudoers.example /etc/sudoers.d/deveryman-dpa
+#   # edit the user and systemctl path to match this host, then:
+#   sudo chmod 440 /etc/sudoers.d/deveryman-dpa
+#   sudo visudo -c -f /etc/sudoers.d/deveryman-dpa   # validate
+#
+# The dashboard only ever runs `sudo systemctl {start,stop,restart}
+# dpa-underseer@<slug>` after validating <slug> against projects.json, and the
+# rule below limits sudo to exactly those three verbs on dpa-underseer@ instances.
+
+<web-user> ALL=(root) NOPASSWD: /usr/bin/systemctl start dpa-underseer@*.service, /usr/bin/systemctl stop dpa-underseer@*.service, /usr/bin/systemctl restart dpa-underseer@*.service
