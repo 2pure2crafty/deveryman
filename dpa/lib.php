@@ -2,13 +2,13 @@
 declare(strict_types=1);
 /*
  * DPA dashboard lib: read-only view over the pipeline's state surface, on the
- * Everyman shared framework. Paths are config-driven (defaults point at the
+ * D'everyman shared framework. Paths are config-driven (defaults point at the
  * current single-project HDS layout); this is the seam the multi-project
  * refactor grows from. Read-only for now: no cycle controls yet.
  */
 
-define('EVERYMAN_APP', 'DPA');
-define('EVERYMAN_CONFIG', getenv('EVERYMAN_CONFIG') ?: '/etc/default/conductor');
+define('DEVERYMAN_APP', 'DPA');
+define('DEVERYMAN_CONFIG', getenv('DEVERYMAN_CONFIG') ?: '/etc/default/conductor');
 require __DIR__ . '/../shared/framework/framework.php';
 
 /** Directory holding the pipeline daemon's control/state files. */

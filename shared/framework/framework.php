@@ -1,15 +1,15 @@
 <?php
 declare(strict_types=1);
 /*
- * Everyman shared framework: the generic plumbing every dashboard reuses
+ * D'everyman shared framework: the generic plumbing every dashboard reuses
  * (auth, config, HTML shell, process runner). Prefixed fw_ to avoid collisions
  * while Conductor still carries its own copies; Conductor converges onto this
- * later (see docs/FUTURE.md). Apps set EVERYMAN_APP and EVERYMAN_CONFIG before
+ * later (see docs/FUTURE.md). Apps set DEVERYMAN_APP and DEVERYMAN_CONFIG before
  * requiring this file.
  */
 
-if (!defined('EVERYMAN_APP'))    define('EVERYMAN_APP', 'Everyman');
-if (!defined('EVERYMAN_CONFIG')) define('EVERYMAN_CONFIG', '/etc/default/conductor');
+if (!defined('DEVERYMAN_APP'))    define('DEVERYMAN_APP', "D'everyman");
+if (!defined('DEVERYMAN_CONFIG')) define('DEVERYMAN_CONFIG', '/etc/default/conductor');
 
 /** Escape for HTML. */
 function fw_h(string $s): string {
@@ -21,8 +21,8 @@ function fw_config(): array {
     static $c = null;
     if ($c !== null) return $c;
     $c = [];
-    if (is_readable(EVERYMAN_CONFIG)) {
-        foreach (file(EVERYMAN_CONFIG, FILE_IGNORE_NEW_LINES) as $line) {
+    if (is_readable(DEVERYMAN_CONFIG)) {
+        foreach (file(DEVERYMAN_CONFIG, FILE_IGNORE_NEW_LINES) as $line) {
             $line = trim($line);
             if ($line === '' || $line[0] === '#') continue;
             if (preg_match('/^([A-Z_][A-Z0-9_]*)=(.*)$/', $line, $m)) $c[$m[1]] = trim($m[2], "\"'");
@@ -42,7 +42,7 @@ function fw_require_auth(): void {
     $gu = $_SERVER['PHP_AUTH_USER'] ?? '';
     $gp = $_SERVER['PHP_AUTH_PW'] ?? '';
     if ($user === '' || $pass === '' || !hash_equals($user, $gu) || !hash_equals($pass, $gp)) {
-        header('WWW-Authenticate: Basic realm="' . EVERYMAN_APP . '"');
+        header('WWW-Authenticate: Basic realm="' . DEVERYMAN_APP . '"');
         http_response_code(401);
         echo 'Auth required.';
         exit;
@@ -65,7 +65,7 @@ function fw_header(string $title, string $home = ''): void {
     echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
         . '<meta name="viewport" content="width=device-width, initial-scale=1">'
         . '<meta name="theme-color" content="#111111">'
-        . '<title>' . fw_h($title) . ' - ' . fw_h(EVERYMAN_APP) . '</title><style>'
+        . '<title>' . fw_h($title) . ' - ' . fw_h(DEVERYMAN_APP) . '</title><style>'
         . 'body{font-family:system-ui,sans-serif;max-width:680px;margin:0 auto;padding:16px;background:#111;color:#eee}'
         . 'a{color:#7ab8ff}h1{font-size:1.4rem}h2{font-size:1.1rem;margin-top:1.5em}'
         . '.card{background:#1c1c1c;border:1px solid #333;border-radius:8px;padding:14px;margin:10px 0}'
@@ -78,7 +78,7 @@ function fw_header(string $title, string $home = ''): void {
         . 'border-radius:6px;padding:10px;font-size:0.82rem;color:#cfcfcf;max-height:360px;overflow:auto}'
         . '.back{display:inline-block;margin-bottom:10px;color:#888;text-decoration:none}'
         . '</style></head><body>';
-    if ($home !== '') echo '<a class="back" href="' . fw_h($home) . '">&larr; ' . fw_h(EVERYMAN_APP) . '</a>';
+    if ($home !== '') echo '<a class="back" href="' . fw_h($home) . '">&larr; ' . fw_h(DEVERYMAN_APP) . '</a>';
 }
 
 function fw_footer(): void {

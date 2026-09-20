@@ -8,7 +8,7 @@ define('CONDUCTOR_CONFIG_FILE', getenv('CONDUCTOR_CONFIG') ?: '/etc/default/cond
 
 // Repo-relative paths (these ship with the code and are the same on any server).
 define('REGISTRY_PATH', __DIR__ . '/registry.json');
-// Single source of truth: the shared memory-kit in the Everyman monorepo.
+// Single source of truth: the shared memory-kit in the D'everyman monorepo.
 define('WRAPUP_SKILL_SRC', __DIR__ . '/../shared/memory-kit/skills/wrap-up/SKILL.md');
 define('SPAWN_FINISH_SCRIPT', __DIR__ . '/spawn-finish.sh');
 define('SWITCH_TERMINAL_SCRIPT', __DIR__ . '/switch-terminal-finish.sh');

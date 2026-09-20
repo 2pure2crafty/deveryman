@@ -1,0 +1,23 @@
+# D'everyman launcher systemd unit template.
+#
+#   sudo cp deveryman-launcher.service.example /etc/systemd/system/deveryman-launcher.service
+#   # edit User/Group/path/port, then:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now deveryman-launcher.service
+#
+# The front door. Bind to 127.0.0.1; reach over Tailscale on its own HTTPS port
+# (e.g. :8445). Set DEVERYMAN_CONDUCTOR_URL / DEVERYMAN_DPA_URL in the config so
+# its per-project links resolve.
+
+[Unit]
+Description=D'everyman launcher
+After=network.target
+
+[Service]
+Type=simple
+User=change-me
+Group=change-me
+ExecStart=/usr/bin/php -S 127.0.0.1:7684 -t /opt/deveryman/launcher/public
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

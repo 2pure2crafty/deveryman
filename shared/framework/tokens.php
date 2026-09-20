@@ -2,7 +2,7 @@
 declare(strict_types=1);
 /*
  * Shared token accounting: read Claude Code transcripts and total usage across
- * everything (Conductor agents, DPA agents, any). Used by the Everyman launcher
+ * everything (Conductor agents, DPA agents, any). Used by the D'everyman launcher
  * for the aggregate view. Conductor still has its own copy (converge later).
  */
 

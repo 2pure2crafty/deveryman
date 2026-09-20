@@ -1,6 +1,6 @@
-# Everyman
+# D'everyman
 
-Everyman is a personal OS for running Claude Code agents: the shell that sits
+D'everyman is a personal OS for running Claude Code agents: the shell that sits
 above the orchestrators. You log in, pick a project, and operate on it through
 whichever capability fits, **Conductor** (manual, on-demand agents you talk to)
 or **DPA** (an automated build pipeline). It is the top layer that consolidates
@@ -29,19 +29,19 @@ That sent me down a path:
 3. **The consolidation.** Conductor turned out to be one of two orchestrators;
    the other is the DPA, an automated build pipeline. They share a discipline and
    should share a framework and a front door.
-4. **Everyman.** The layer above both. The OS.
+4. **D'everyman.** The layer above both. The OS.
 
 See `docs/ROADMAP.md` for the structure and the staged build plan.
 
 ## Structure (monorepo)
 
 ```
-everyman/
+deveryman/
   shared/framework/   plumbing every dashboard reuses (auth, render, tmux, tokens)
   shared/memory-kit/  the portable discipline, installed into agents
   conductor/          manual, on-demand agents (+ its daemon)
   dpa/                the automated build pipeline (+ the underseer daemon)
-  launcher/           Everyman itself: login, project-first UI, aggregate tokens
+  launcher/           D'everyman itself: login, project-first UI, aggregate tokens
   projects.json       the canonical project registry, shared by both capabilities
 ```
 
@@ -54,7 +54,7 @@ Each app binds to 127.0.0.1 and is exposed on its own Tailscale HTTPS port:
 
 | App               | Local            | Tailscale port |
 | ----------------- | ---------------- | -------------- |
-| Everyman launcher | 127.0.0.1:7684   | `:8445` (front door) |
+| D'everyman launcher | 127.0.0.1:7684   | `:8445` (front door) |
 | Conductor         | 127.0.0.1:7682   | `:8443`        |
 | DPA dashboard     | 127.0.0.1:7683   | `:8444`        |
 

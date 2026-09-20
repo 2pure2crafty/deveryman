@@ -1,7 +1,7 @@
-# Everyman
+# D'everyman
 
-Everyman is the top layer: the OS / shell that sits above the orchestrators. You
-log into Everyman and from there you operate on your projects through whichever
+D'everyman is the top layer: the OS / shell that sits above the orchestrators. You
+log into D'everyman and from there you operate on your projects through whichever
 capability fits, Conductor (manual, on-demand agents) or DPA (the automated
 build pipeline). This repo is the monorepo that holds all of it.
 
@@ -25,7 +25,7 @@ usually a git repo). Against a project you can apply one or both capabilities:
 So navigation is **project-first**:
 
 ```
-Everyman (login)
+D'everyman (login)
   -> Projects
        -> HDS
             -> Conductor  (talk to the ideas agent, spin up/down, ...)
@@ -36,14 +36,14 @@ Everyman (login)
   -> (aggregate view: tokens used + tokens saved across everything)
 ```
 
-Everyman is the shell; Conductor and DPA are capabilities; projects are what you
+D'everyman is the shell; Conductor and DPA are capabilities; projects are what you
 point them at. Both capabilities must be **generic / multi-project** (Conductor
 already is; DPA is not yet, see below).
 
 ## Architecture (monorepo layout)
 
 ```
-everyman/
+deveryman/
   shared/
     framework/     PHP plumbing both dashboards reuse: auth, render/CSS,
                    run_cmd, tmux status, config, the transcript/token reader.
@@ -53,7 +53,7 @@ everyman/
   conductor/       The Conductor dashboard + daemon (manual agents). Migrates
                    here from its current location.
   dpa/             The DPA dashboard + the (now multi-project) underseer daemon.
-  launcher/        Everyman itself: login, the project-first UI, and the
+  launcher/        D'everyman itself: login, the project-first UI, and the
                    aggregate token view.
   projects.json    Canonical project registry (shared source of truth).
 ```
@@ -120,7 +120,7 @@ Why: to revert a branch and pick up where you left off, you find the commit,
 find the matching history entry by its sha, and read that handoff. It makes
 "context history" and "git history" a single correlated timeline.
 
-## Token accounting (Conductor, DPA, and the Everyman aggregate)
+## Token accounting (Conductor, DPA, and the D'everyman aggregate)
 
 The transcript/token reader (already built in Conductor) is the shared
 primitive: it reads Claude Code's per-project transcripts and totals tokens.
@@ -128,14 +128,14 @@ Because DPA agents also run `claude`, the same reader totals their usage too.
 
 - Conductor view: tokens used by its manual agents (per project).
 - DPA view: tokens used by the pipeline (per project).
-- **Everyman aggregate:** the combination, per project and globally, plus an
+- **D'everyman aggregate:** the combination, per project and globally, plus an
   estimated **tokens saved** figure. "Saved" is a guesstimate: sum the context
   size at each auto-wrap-down times ~1.25 (the cold cache rebuild avoided by
   resetting to a small SESSION.md). Labelled as an estimate, not billing truth.
 
 ## Making the DPA multi-project (the big lift)
 
-underseer today is HDS-specific. To be a capability Everyman can point at any
+underseer today is HDS-specific. To be a capability D'everyman can point at any
 project, it needs a per-project pipeline config (project path/repo, build queue,
 cycle state, autonomy level) and to run pipelines per project (one underseer
 managing several project-pipelines, or an instance per project). This is the
@@ -145,7 +145,7 @@ largest single piece of the whole endeavour and gets its own phase.
 
 Ordered to deliver small wins first, then the big dashboard/multi-project arc.
 
-**Phase 0 - This repo.** Everyman repo + this structure doc. (Done, local.)
+**Phase 0 - This repo.** D'everyman repo + this structure doc. (Done, local.)
 
 **Phase 1 - Memory-kit + manual agents.** Extract the wrap-up skill + reading
 ladder + convention into `shared/memory-kit/`, add git commit cross-referencing,
@@ -158,7 +158,7 @@ agents; modify underseer to send `/wrap-up` and wait before `kill-session`
 
 **Phase 3 - Framework extraction + Conductor migration.** Factor Conductor's
 plumbing into `shared/framework/` (extract-on-second-use). Migrate the live
-Conductor into `everyman/conductor/` carefully (systemd unit paths, config path,
+Conductor into `deveryman/conductor/` carefully (systemd unit paths, config path,
 Tailscale), same discipline as the router->conductor rename. Introduce
 `projects.json` as the shared registry.
 
@@ -169,21 +169,21 @@ intake form as a web form -> start/stop cycles, approve/deny escalations, daemon
 on/off). This turns the "overseer AI as the pipeline's interface" into a real UI,
 and makes retiring the always-on overseer natural.
 
-**Phase 5 - The Everyman launcher.** The project-first shell: login, the project
+**Phase 5 - The D'everyman launcher.** The project-first shell: login, the project
 list, per-project Conductor/DPA entry points, and the aggregate token view (used
 + estimated saved across both capabilities).
 
 ## Open decisions (to confirm before/along the way)
 
-1. **Nav spine: project-first** (Everyman -> project -> Conductor/DPA) is the
+1. **Nav spine: project-first** (D'everyman -> project -> Conductor/DPA) is the
    agreed primary. A secondary "by tool" view (all Conductor agents; all DPA
    pipelines) can come later if useful.
-2. **Everyman location:** `/var/www/everyman` (above HDS, since it is the OS over
+2. **D'everyman location:** `/var/www/deveryman` (above HDS, since it is the OS over
    all projects). Conductor moves under it in Phase 3.
 3. **Read-only-first for the DPA dashboard:** strongly recommended, since the
    control buttons drive real pipeline runs.
 4. **Repo visibility:** Conductor is public-temporarily with a restrictive
-   license. Everyman (holding Conductor) presumably follows the same, confirm
+   license. D'everyman (holding Conductor) presumably follows the same, confirm
    before pushing to GitHub.
 5. **One underseer or per-project instances** for the multi-project DPA: to be
    decided in Phase 4 design.
