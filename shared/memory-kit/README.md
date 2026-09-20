@@ -6,11 +6,11 @@ can follow it, independent of who orchestrates that agent.
 
 ## What it is
 
-- **`skills/wrap-up/SKILL.md`** — the wrap-up skill. On `/wrap-up`, writes the
+- **`skills/wrap-up/SKILL.md`** - the wrap-up skill. On `/wrap-up`, writes the
   latest handoff to `SESSION.md` and prepends it to an append-only
   `memory/HISTORY.md`, both stamped with the git branch + commit so agent history
   correlates with repo history.
-- **`CLAUDE-snippet.md`** — the reading-ladder block to paste near the top of an
+- **`CLAUDE-snippet.md`** - the reading-ladder block to paste near the top of an
   agent's `CLAUDE.md` (SESSION -> DIGEST -> HISTORY -> archive).
 
 ## The tiered files (created in the agent's own dir at runtime)
