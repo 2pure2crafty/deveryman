@@ -10,3 +10,5 @@ SESSION.md
 agent-*.jsonl
 *.swp
 .DS_Store
+__pycache__/
+*.pyc

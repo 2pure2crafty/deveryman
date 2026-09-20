@@ -50,3 +50,25 @@ pipeline being un-paused so it can be verified live:
   underseer + the overseer CLAUDE.md) as part of the DPA multi-project refactor
   (Phase 4). Until then, **the pipeline wrap-up is untested live** (no cycle has
   run); the logic compiles and mirrors the proven Conductor wrap-down path.
+
+## Phase 4 progress (multi-project DPA) VERIFIED LIVE
+
+The generic config-driven daemon (`dpa/underseer.py`) drove a full pipeline
+(features -> dev -> reviewer) on a fresh non-HDS sandbox project: it wrote an
+on-spec build phase, implemented and committed the feature on a branch, passed
+review, and the built code runs and passes its own checks. Driven entirely by
+`project.json`; nothing HDS baked in.
+
+Remaining to finish multi-project DPA:
+- Generic templates for the other 5 stages (acceptance, testing-staging,
+  integration-testing, ux-ui, product). Only features/dev/reviewer exist; the
+  first run used a 3-stage config to prove the mechanism.
+- Run the daemon under a persistent supervisor (per-project systemd service). The
+  test used the background task runner; real use needs reboot/shell survival.
+- Migrate HDS onto the generic daemon via its own `project.json` (retire the
+  hardcoded overseer/underseer.py).
+- DPA dashboard controls + per-project state (start/stop cycles, escalations),
+  pointed at a project's `.pipeline/docs`.
+- Shared `projects.json` so launcher/Conductor/DPA read one registry.
+- Minor: agents sometimes write em dashes in their output; a project's PROJECT.md
+  can forbid it if it matters.
