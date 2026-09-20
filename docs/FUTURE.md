@@ -16,6 +16,29 @@ Things that surfaced while building. For review at the end, not blockers.
   that allows this; an agent launched by hand in plain mode would prompt. Not an
   issue for the Conductor/daemon path, noted for completeness.
 
+## Phase 4 remaining (needs the pipeline un-paused)
+
+Shipped this pass: the shared framework (`shared/framework/framework.php`) and a
+read-only DPA dashboard (`dpa/`, live on :8444). Still to do, all gated on the
+pipeline being un-paused so it can be verified live:
+
+1. **underseer multi-project refactor.** Make the daemon per-project: fix the
+   stale paths (`AGENT_ROOT`, `/var/www/hdp/staging/docs/...`), take a per-project
+   pipeline config (project path/repo, build queue, cycle state, autonomy), and
+   run pipelines for any project, not just HDS. This is the largest piece and
+   settles the state model the dashboard reads.
+2. **Consolidate the pipeline state surface.** Today `pipeline-state.md` is
+   scattered per-stage and `build-queue.md` was not found; the read-only
+   dashboard already degrades gracefully, but the canonical files need pinning
+   (part of the refactor).
+3. **DPA dashboard controls.** Once the state model is settled: the intake form
+   as a web form (start/stop cycles -> current-config.md), approve/deny
+   escalations, daemon on/off. Read-only first (done), controls second.
+4. **Converge Conductor onto the shared framework.** Conductor still carries its
+   own copies of the generic helpers (auth, render, run_cmd). It works and was
+   left untouched to avoid surgery on a live service; fold it onto
+   `shared/framework` deliberately later. Temporary duplication, by design.
+
 ## From Phase 2 (pipeline wrap-up)
 
 - **underseer AGENT_ROOT is a stale path.** `underseer.py` uses

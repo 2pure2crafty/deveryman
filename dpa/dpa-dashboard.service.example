@@ -1,0 +1,22 @@
+# DPA dashboard systemd unit template (Everyman).
+#
+#   sudo cp dpa-dashboard.service.example /etc/systemd/system/dpa-dashboard.service
+#   # edit User/Group/path/port, then:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now dpa-dashboard.service
+#
+# Read-only viewer over the pipeline state. Bind to 127.0.0.1; reach it over
+# Tailscale on its own HTTPS port (e.g. :8444) alongside Conductor (:8443).
+
+[Unit]
+Description=DPA dashboard (Everyman)
+After=network.target
+
+[Service]
+Type=simple
+User=change-me
+Group=change-me
+ExecStart=/usr/bin/php -S 127.0.0.1:7683 -t /opt/everyman/dpa/public
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
