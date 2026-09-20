@@ -20,5 +20,5 @@ soon as you have enough to work, you rarely need all of them:
 
 Treat these as a briefing to get oriented quickly, not a script to follow blindly.
 
-When Patch runs `/wrap-up`, write a fresh handoff to `SESSION.md` AND prepend it
+When you run `/wrap-up`, write a fresh handoff to `SESSION.md` AND prepend it
 to `memory/HISTORY.md`, git-stamped, following the wrap-up skill.

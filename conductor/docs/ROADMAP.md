@@ -336,7 +336,7 @@ working directory with `/` replaced by `-` (e.g. `/var/www/project-two` ->
 **How.**
 - Add `agent_token_usage(project, agent)` to `lib.php`: resolve the agent's cwd,
   map it to the encoded transcript dir under a configurable transcripts root
-  (`CONDUCTOR_TRANSCRIPTS_DIR`, default `/home/patch/.claude/projects`), read
+  (`CONDUCTOR_TRANSCRIPTS_DIR`, default `/home/deveryman/.claude/projects`), read
   every `*.jsonl`, and sum the four usage fields (grouped by model, since
   pricing differs).
 - `project_token_usage(project)` sums across the project's agents.
@@ -529,7 +529,7 @@ server-specific stays out of git:
 - The systemd unit lives in `/etc/systemd/system/`, outside the repo; the repo
   carries `conductor.service.example`.
 - Agent working dirs are created under `CONDUCTOR_BASE_DIR`
-  (`/var/www/hdp/agents` here), siblings of the repo, never inside it.
+  (`/var/www/deveryman-agents` here), siblings of the repo, never inside it.
 
 New per-deployment state introduced by these features (watcher dedupe file,
 audit log, idle timers) must follow the same rule: write it **outside** the repo

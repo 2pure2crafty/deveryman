@@ -50,8 +50,8 @@ opted in**, so it is inert but ready. Nothing auto-kills until you arm it.
   the last ~400 lines of scrollback. On a very long session it can scroll off.
   More robust: have `spawn-finish.sh` capture the URL once and stash it in the
   registry. Deferred.
-- **Nudge was not live-fired** to avoid injecting a message into your active My
-  Cards session. The handler is a near-copy of the proven keystroke path and
+- **Nudge was not live-fired** to avoid injecting a message into an active
+  session. The handler is a near-copy of the proven keystroke path and
   lints clean; worth one real test when convenient.
 - **Cost estimate uses the agent's registry model** for all historical turns.
   Transcripts record the model per turn, so a session that switched models is
@@ -77,6 +77,6 @@ opted in**, so it is inert but ready. Nothing auto-kills until you arm it.
 4. **Dashboard token totals with caching**, if you want spend visible at a
    glance.
 5. **HISTORY archive rotation**, only if a project's history gets very large.
-6. **Retire the always-on HDS-overseer** (the original goal): kill it and let
+6. **Retire the always-on overseer** (the original goal): kill it and let
    Conductor spin it up on demand, now that wrap-down + tiered memory preserve
    its context cheaply.

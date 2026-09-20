@@ -7,7 +7,7 @@ declare(strict_types=1);
  */
 
 function fw_transcripts_dir(): string {
-    return rtrim(fw_config_get('CONDUCTOR_TRANSCRIPTS_DIR', '/home/patch/.claude/projects'), '/');
+    return rtrim(fw_config_get('CONDUCTOR_TRANSCRIPTS_DIR', '/home/deveryman/.claude/projects'), '/');
 }
 
 function fw_fmt_tokens(int $n): string {

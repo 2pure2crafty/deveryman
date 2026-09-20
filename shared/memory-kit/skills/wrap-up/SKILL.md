@@ -34,7 +34,7 @@ Include, only where it applies:
   saves the next session from re-litigating it)
 - Current state of any in-progress work: what's done, what's half-done, what's
   untouched
-- Open questions or anything blocked on Patch
+- Open questions or anything blocked on the operator
 - The concrete next step, stated plainly
 - A `Git:` line: `Git: <branch> @ <short-sha> (this session: <sha list or "no commits">)`
 
@@ -59,4 +59,4 @@ separately (by the daemon) from this log.
 
 ## 4. Close out
 
-After writing both, tell Patch the session is ready to close.
+After writing both, note that the session is ready to close.

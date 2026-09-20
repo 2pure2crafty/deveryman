@@ -53,7 +53,7 @@ does not compound away.
 The skill is inert until something calls `/wrap-up`. That invoker differs by
 orchestrator:
 
-- **Conductor** (manual agents): Patch, or the Conductor daemon on the big+idle
+- **Conductor** (manual agents): you, or the Conductor daemon on the big+idle
   timer.
 - **DPA** (pipeline stages): the underseer daemon, at stage handoff before it
   kills the agent.

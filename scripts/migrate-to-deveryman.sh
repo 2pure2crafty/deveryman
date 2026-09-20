@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# Migrate D'everyman's runtime from the `patch` user to the dedicated, non-sudo
+# Migrate D'everyman's runtime from a privileged user to the dedicated, non-sudo
 # `deveryman` service user, so nothing web-facing runs as a full sudoer.
 #
 # WHY: the web apps (conductor, dpa dashboard, launcher) and the conductor daemon
-# pilot Claude Code, tmux and gh. While they run as `patch` (NOPASSWD:ALL), any
+# pilot Claude Code, tmux and gh. While they run as a user with broad sudo, any
 # web bug is effectively root. After this migration they run as `deveryman`,
 # which can do ONLY the scoped systemctl verbs in /etc/sudoers.d/deveryman and
-# drive its own agents. `patch` stays as the break-glass human admin, untouched.
+# drive its own agents. Your own login stays as the break-glass admin, untouched.
 #
 # RUN THIS FROM A TAILSCALE SSH SESSION, AS ROOT (sudo), *NOT* from ttyd or the
 # tmux window this rehomes -- the cutover restarts ttyd and will drop that
@@ -61,6 +61,9 @@ backup() {
         cp -n "/etc/systemd/system/${u}.service" "${BAKDIR}/${u}.service.orig" 2>/dev/null || true
     done
     cp -n "$CONF" "${BAKDIR}/conductor.orig" 2>/dev/null || true
+    # Record the original owner of the app tree so rollback can restore it,
+    # whatever privileged user this box was running as.
+    [ -f "${BAKDIR}/orig-owner" ] || stat -c '%U:%G' "$APP" > "${BAKDIR}/orig-owner"
     echo "$stamp" > "${BAKDIR}/last-migrate.stamp"
     log "Backed up units + config to $BAKDIR (originals preserved)."
 }
@@ -80,7 +83,7 @@ migrate() {
 
     log "Phase A: rewrite units to User/Group=$SVC_USER"
     for u in "${UNITS[@]}"; do
-        sed -i "s/^User=patch/User=${SVC_USER}/; s/^Group=patch/Group=${SVC_USER}/" "/etc/systemd/system/${u}.service"
+        sed -i "s/^User=.*/User=${SVC_USER}/; s/^Group=.*/Group=${SVC_USER}/" "/etc/systemd/system/${u}.service"
     done
     systemctl daemon-reload
 
@@ -92,7 +95,7 @@ migrate() {
             "$(systemctl show -p User --value "$u")"
     done
 
-    # The patch-scoped copy is now redundant (services run as deveryman).
+    # Any old scoped copy keyed to the previous user is now redundant.
     [ -f /etc/sudoers.d/deveryman-dpa ] && { rm -f /etc/sudoers.d/deveryman-dpa; log "Removed redundant /etc/sudoers.d/deveryman-dpa"; }
 
     cat <<EOF
@@ -101,8 +104,8 @@ $(log "Services migrated. TWO MANUAL STEPS REMAIN (they sever ttyd, so do them l
   1. Re-point ttyd to ${SVC_USER}'s tmux: edit /etc/systemd/system/ttyd.service
      (User=${SVC_USER}) and its /etc/default/ttyd credential, then
        systemctl daemon-reload && systemctl restart ttyd
-  2. Any long-lived agents still in patch's tmux (e.g. the overseer) are left
-     running; start new ones via the dashboards (they now land in ${SVC_USER}'s tmux).
+  2. Any long-lived agents still in the old user's tmux (e.g. the overseer) are
+     left running; start new ones via the dashboards (they now land in ${SVC_USER}'s tmux).
 
 Rollback anytime:  sudo bash $0 rollback
 EOF
@@ -115,10 +118,11 @@ rollback() {
         [ -f "${BAKDIR}/${u}.service.orig" ] && cp "${BAKDIR}/${u}.service.orig" "/etc/systemd/system/${u}.service"
     done
     [ -f "${BAKDIR}/conductor.orig" ] && cp "${BAKDIR}/conductor.orig" "$CONF"
-    chown -R patch:patch "$APP" "$DATA"
+    local orig; orig=$(cat "${BAKDIR}/orig-owner" 2>/dev/null || echo root:root)
+    chown -R "$orig" "$APP" "$DATA"
     systemctl daemon-reload
     systemctl restart "${UNITS[@]}"
-    log "Rolled back to patch. (ttyd: revert User=patch manually if you changed it.)"
+    log "Rolled back to ${orig%%:*}. (ttyd: revert its User manually if you changed it.)"
 }
 
 case "${1:-preflight}" in

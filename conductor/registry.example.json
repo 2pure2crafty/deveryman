@@ -1,18 +1,34 @@
 {
     "projects": {
-        "example-project": {
-            "label": "Example project",
-            "path": "/var/www/agents/example-project",
+        "project-one": {
+            "label": "Project One",
+            "path": "/var/www/deveryman-agents/project-one",
             "repo": null,
             "description": "Short description of the project. Shown on the dashboard and project page, and used as CLAUDE.md seed context for new agents created under this project.",
             "agents": {
                 "main": {
                     "label": "Main",
                     "path": "main",
-                    "tmux": "HDS-example-project-main",
+                    "tmux": "DEV-project-one-main",
                     "model": "sonnet",
                     "permission_mode": "acceptEdits",
                     "auto_wrapdown": false
+                }
+            }
+        },
+        "project-two": {
+            "label": "Project Two",
+            "path": "/var/www/deveryman-agents/project-two",
+            "repo": null,
+            "description": "A second project, to show the registry holds many. Each project has its own agents; Conductor and DPA are capabilities you apply per project.",
+            "agents": {
+                "main": {
+                    "label": "Main",
+                    "path": "main",
+                    "tmux": "DEV-project-two-main",
+                    "model": "opus",
+                    "permission_mode": "acceptEdits",
+                    "auto_wrapdown": true
                 }
             }
         }

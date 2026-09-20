@@ -10,8 +10,9 @@ build pipeline). This repo is the monorepo that holds all of it.
 > on a fresh sandbox project, committing working code that passes its checks),
 > with a per-project systemd supervisor, a shared `projects.json`, and a
 > per-project DPA dashboard. What remains: DPA write-controls (a scoped sudo
-> rule), migrating HDS onto the generic daemon, and converging Conductor onto the
-> shared framework. See `FUTURE.md`. The project is now "D'everyman".
+> rule), migrating a real project onto the generic daemon, and converging
+> Conductor onto the shared framework. See `FUTURE.md`. The project is now
+> "D'everyman".
 
 ## The mental model
 
@@ -29,10 +30,10 @@ So navigation is **project-first**:
 ```
 D'everyman (login)
   -> Projects
-       -> HDS
+       -> Project One
             -> Conductor  (talk to the ideas agent, spin up/down, ...)
             -> DPA        (run the build pipeline, watch cycles, ...)
-       -> <other project>
+       -> Project Two
             -> Conductor
             -> DPA
   -> (aggregate view: tokens used + tokens saved across everything)
@@ -66,7 +67,8 @@ One `projects.json` is the source of truth for what projects exist:
 
 ```
 { "projects": {
-    "hds": { "label": "HDS", "path": "...", "repo": "...", "description": "...",
+    "project-one": { "label": "Project One", "path": "...", "repo": "...",
+             "description": "...",
              "capabilities": { "conductor": {...}, "dpa": {...} } }
 } }
 ```
@@ -137,9 +139,9 @@ Because DPA agents also run `claude`, the same reader totals their usage too.
 
 ## Making the DPA multi-project (the big lift)
 
-underseer today is HDS-specific. To be a capability D'everyman can point at any
-project, it needs a per-project pipeline config (project path/repo, build queue,
-cycle state, autonomy level) and to run pipelines per project (one underseer
+underseer today is tied to a single project. To be a capability D'everyman can
+point at any project, it needs a per-project pipeline config (project path/repo,
+build queue, cycle state, autonomy level) and to run pipelines per project (one underseer
 managing several project-pipelines, or an instance per project). This is the
 largest single piece of the whole endeavour and gets its own phase.
 
@@ -180,8 +182,8 @@ list, per-project Conductor/DPA entry points, and the aggregate token view (used
 1. **Nav spine: project-first** (D'everyman -> project -> Conductor/DPA) is the
    agreed primary. A secondary "by tool" view (all Conductor agents; all DPA
    pipelines) can come later if useful.
-2. **D'everyman location:** `/var/www/deveryman` (above HDS, since it is the OS over
-   all projects). Conductor moves under it in Phase 3.
+2. **D'everyman location:** `/var/www/deveryman` (above the projects, since it is
+   the OS over all projects). Conductor moves under it in Phase 3.
 3. **Read-only-first for the DPA dashboard:** strongly recommended, since the
    control buttons drive real pipeline runs.
 4. **Repo visibility:** Conductor is public-temporarily with a restrictive

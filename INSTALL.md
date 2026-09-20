@@ -72,13 +72,13 @@ sudo chmod 600 /etc/default/conductor
 
 Set at least:
 
-- `CONDUCTOR_USER` / `CONDUCTOR_PASS` — the login for every dashboard
+- `CONDUCTOR_USER` / `CONDUCTOR_PASS`: the login for every dashboard
   (`openssl rand -hex 8` makes a good password).
-- `CONDUCTOR_BASE_DIR=/var/www/deveryman-agents` — where new Conductor agents are
+- `CONDUCTOR_BASE_DIR=/var/www/deveryman-agents`: where new Conductor agents are
   created (a `deveryman`-owned path).
-- `CONDUCTOR_TRANSCRIPTS_DIR=/home/deveryman/.claude/projects` — where the
+- `CONDUCTOR_TRANSCRIPTS_DIR=/home/deveryman/.claude/projects`: where the
   service user's Claude Code transcripts live (this drives the token totals).
-- `DEVERYMAN_PROJECTS_DIR=/var/www/dpa-projects` — where imported repos land.
+- `DEVERYMAN_PROJECTS_DIR=/var/www/dpa-projects`: where imported repos land.
 
 The example file documents every key.
 
@@ -178,9 +178,9 @@ restart services or reboot the host.
 
 ## Already running as a privileged user?
 
-If you installed an earlier build as `patch` (or another sudoer),
-`docs/PRIVILEGE-MIGRATION.md` and `scripts/migrate-to-deveryman.sh` move the whole
-runtime onto the dedicated `deveryman` user without a reinstall.
+If you installed an earlier build as a privileged user (root, or any user with
+broad sudo), `docs/PRIVILEGE-MIGRATION.md` and `scripts/migrate-to-deveryman.sh`
+move the whole runtime onto the dedicated `deveryman` user without a reinstall.
 
 ## Requirements recap
 

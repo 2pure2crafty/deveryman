@@ -1,18 +1,18 @@
 {
   "projects": {
-    "sandbox": {
-      "label": "Sandbox",
-      "path": "/var/www/dpa-projects/sandbox",
+    "project-one": {
+      "label": "Project One",
+      "path": "/var/www/deveryman-agents/project-one",
       "capabilities": {
-        "dpa": { "config": "/var/www/dpa-projects/sandbox/project.json" }
+        "conductor": true
       }
     },
-    "example-app": {
-      "label": "Example app",
-      "path": "/var/www/agents/example-app",
+    "project-two": {
+      "label": "Project Two",
+      "path": "/var/www/dpa-projects/project-two",
       "capabilities": {
         "conductor": true,
-        "dpa": { "config": "/var/www/dpa-projects/example-app/project.json" }
+        "dpa": { "config": "/var/www/dpa-projects/project-two/project.json" }
       }
     }
   }

@@ -2,9 +2,10 @@
 """
 D'everyman DPA underseer: a generic, config-driven build-pipeline daemon.
 
-Unlike the HDS-specific original, this reads a project.json and runs the pipeline
-for ANY project. Nothing HDS is baked in; paths, tmux prefix, git settings, stage
-list, and per-agent context all come from the config. See DESIGN.md.
+Unlike the bespoke pipeline this was generalized from, it reads a project.json
+and runs the pipeline for ANY project. Nothing project-specific is baked in;
+paths, tmux prefix, git settings, stage list, and per-agent context all come from
+the config. See DESIGN.md.
 
 Run:  python3 underseer.py /path/to/project.json
 """
@@ -364,9 +365,9 @@ def p_reason_model() -> str:
 
 
 def escalate(p: "Project", reason_str: str, detail: str = ""):
-    """Write a triaged escalation for Patch and block. The daemon runs a one-shot
-    reasoning pass to summarize what happened and propose options, so what reaches
-    Patch is already triaged (not a raw dump)."""
+    """Write a triaged escalation for the operator and block. The daemon runs a
+    one-shot reasoning pass to summarize what happened and propose options, so what
+    reaches the operator is already triaged (not a raw dump)."""
     inbox = p.docs / "dev-inbox"
     ctx = (f"Reason: {reason_str}\nDetail: {detail}\n\n"
            f"Pipeline state:\n{p.state_file.read_text() if p.state_file.exists() else ''}\n")
@@ -374,7 +375,7 @@ def escalate(p: "Project", reason_str: str, detail: str = ""):
         for f in sorted(inbox.glob("*.md")):
             ctx += f"\n===== {f.name} =====\n{f.read_text()[:4000]}\n"
     triage = reason(
-        "You are triaging a stuck automated build pipeline for a human (Patch). "
+        "You are triaging a stuck automated build pipeline for a human operator. "
         "From the situation below, write a short escalation: (1) what happened, in "
         "one or two sentences; (2) the most likely cause; (3) two or three concrete "
         "options with a recommendation. Concise and practical. Markdown, no preamble.",
@@ -382,7 +383,7 @@ def escalate(p: "Project", reason_str: str, detail: str = ""):
     body = triage or f"(Triage unavailable.)\n\nReason: {reason_str}\nDetail: {detail}"
     stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     esc = p.docs / "escalation.md"
-    entry = f"## Escalation - {stamp}\n\n{body}\n\n**Status:** AWAITING PATCH\n\n---\n\n"
+    entry = f"## Escalation - {stamp}\n\n{body}\n\n**Status:** AWAITING OPERATOR\n\n---\n\n"
     prev = esc.read_text() if esc.exists() else ""
     esc.write_text(entry + prev)
     log(p, f"ESCALATED (triaged): {reason_str}")
@@ -472,8 +473,8 @@ def handle(p: "Project", state: dict, items: list):
             start_agent(p, nxt, feature, cycle, branch)
             log(p, f"Advanced {stage} -> {nxt} for '{feature}'")
         else:
-            write_state(p, {"stage_status": "BLOCKED", "waiting_for": "PATCH"})
-            log(p, f"Stage {stage} complete; autonomy {p.autonomy} < 3, waiting for Patch")
+            write_state(p, {"stage_status": "BLOCKED", "waiting_for": "OPERATOR"})
+            log(p, f"Stage {stage} complete; autonomy {p.autonomy} < 3, waiting for the operator")
         return
 
     if status in ("KICKED BACK", "KICKBACK"):
@@ -487,7 +488,7 @@ def handle(p: "Project", state: dict, items: list):
                      f"Kicked back {count} times; quarantined pending your call.")
             write_state(p, {"current_stage": "none", "stage_status": "BLOCKED",
                             "current_feature": "none", "current_feature_id": "",
-                            "kick_back_count": str(count), "waiting_for": "PATCH"})
+                            "kick_back_count": str(count), "waiting_for": "OPERATOR"})
             return
         target = p.kickback.get(stage, p.stages[0])
         note = f"Kicked back from {stage}. See the feedback in {p.docs}/dev-inbox/."

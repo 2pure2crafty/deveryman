@@ -57,8 +57,8 @@ The layer that runs a single agent (its tool loop, context, and permissions) is
 that agent's "harness"; Claude Code is the harness. Conductor sits one level
 above the harness: it starts, watches, and stops many harness sessions without
 doing the work itself, the way a conductor directs an orchestra rather than
-playing an instrument. It was briefly called "HDS Router," but it doesn't route
-anything and it's no longer HDS-specific.
+playing an instrument. It was briefly called "Router," but it doesn't route
+anything, so the name did not stick.
 
 ## What's in the repo vs. what's per-server
 

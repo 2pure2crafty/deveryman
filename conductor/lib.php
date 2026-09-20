@@ -35,7 +35,7 @@ function conductor_config_get(string $key, string $default = ''): string {
  * from the config file; falls back to a sensible default for a fresh install.
  */
 function conductor_base_dir(): string {
-    return rtrim(conductor_config_get('CONDUCTOR_BASE_DIR', '/var/www/agents'), '/');
+    return rtrim(conductor_config_get('CONDUCTOR_BASE_DIR', '/var/www/deveryman-agents'), '/');
 }
 
 /**
@@ -49,19 +49,19 @@ function conductor_read_scope(): string {
 
 /** tmux session name that ttyd attaches to (used for the "Open terminal" deep-link). */
 function conductor_ttyd_session(): string {
-    return conductor_config_get('CONDUCTOR_TTYD_SESSION', 'hds-remote');
+    return conductor_config_get('CONDUCTOR_TTYD_SESSION', 'deveryman-remote');
 }
 
-/** Prefix for spawned agents' tmux session names, e.g. "HDS" -> "HDS-project-agent". */
+/** Prefix for spawned agents' tmux session names, e.g. "DEV" -> "DEV-project-agent". */
 function conductor_tmux_prefix(): string {
-    return conductor_config_get('CONDUCTOR_TMUX_PREFIX', 'HDS');
+    return conductor_config_get('CONDUCTOR_TMUX_PREFIX', 'DEV');
 }
 
 /* --- daemon / token-tracking config --------------------------------------- */
 
 /** Root dir Claude Code writes per-project transcripts to. */
 function conductor_transcripts_dir(): string {
-    return rtrim(conductor_config_get('CONDUCTOR_TRANSCRIPTS_DIR', '/home/patch/.claude/projects'), '/');
+    return rtrim(conductor_config_get('CONDUCTOR_TRANSCRIPTS_DIR', '/home/deveryman/.claude/projects'), '/');
 }
 
 /** Seconds an agent must sit idle (while over the size gate) before auto-wrap-down. */
@@ -575,7 +575,7 @@ function build_claude_md(string $agentLabel, string $projectDescription, string 
         . "4. `memory/archive/`: superseded versions and rotated-out history. Read only on\n"
         . "   explicit need.\n\n"
         . "Treat these as a briefing to get oriented quickly, not a script to follow blindly.\n\n"
-        . "When Patch runs `/wrap-up`, write a fresh handoff to `SESSION.md` AND append it to\n"
+        . "When you run `/wrap-up`, write a fresh handoff to `SESSION.md` AND append it to\n"
         . "`memory/HISTORY.md`, following the instructions in that skill.\n\n"
         . "---\n\n";
     if (trim($projectDescription) !== '') {
