@@ -256,13 +256,12 @@ def start_agent(p: "Project", stage: str, feature: str, cycle: str, branch: str,
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     _tmux("rename-window", "-t", f"{session}:0", f"{session}-{today}")
     _tmux("send-keys", "-t", session, "claude --permission-mode auto", "Enter")
-    # background startup: wait for init, remote-control, then the kickoff message
-    subprocess.Popen(
-        f"sleep 60 && tmux send-keys -t {session} '/remote-control' Enter"
-        f" && sleep 6 && tmux send-keys -t {session}"
-        f" 'Read startup-context.md, then your CLAUDE.md and PROJECT.md, and begin your stage.' Enter",
-        shell=True,
-    )
+    # Background startup: wait for init + Remote Control active, then send the
+    # kickoff (agent-kickoff.sh handles the timing so the Enter isn't swallowed).
+    kickoff = str(HERE / "agent-kickoff.sh")
+    msg = "Read startup-context.md, then your CLAUDE.md and PROJECT.md, and begin your stage."
+    subprocess.Popen(["nohup", "bash", kickoff, session, msg],
+                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     log(p, f"Started {stage} for feature '{feature}' (session {session})")
     return True
 
@@ -305,9 +304,9 @@ def next_stage(p: "Project", stage: str) -> str | None:
 
 def start_feature(p: "Project", item: dict):
     feature = item["feature"]
-    safe = re.sub(r'[^a-z0-9]+', '-', feature.lower()).strip('-')
+    safe = re.sub(r'[^a-z0-9]+', '-', feature.lower()).strip('-')[:40].strip('-')
     cycle = "cycle-001"
-    branch = f"{p.feature_prefix}{safe}"
+    branch = f"{p.feature_prefix}{item['id']}-{safe}"
     update_queue_status(p, item["id"], "ACTIVE")
     first = p.stages[0]
     write_state(p, {
