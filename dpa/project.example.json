@@ -1,0 +1,22 @@
+{
+  "name": "sandbox",
+  "label": "Sandbox",
+  "repo_root": "/var/www/dpa-projects/sandbox",
+  "pipeline_root": "/var/www/dpa-projects/sandbox/.pipeline",
+  "tmux_prefix": "SBX",
+  "git_user": null,
+  "cycle_branch_prefix": "autonomous/",
+  "feature_branch_prefix": "feature/",
+  "staging_url": "",
+  "autonomy_level": 4,
+  "poll_interval": 30,
+  "stages": ["features", "dev", "reviewer"],
+  "kickback_target": { "reviewer": "features" },
+  "context": {
+    "project_summary": "A small sandbox project used to prove the multi-project DPA end to end.",
+    "tech_stack": "Node.js. Keep changes minimal and self-contained.",
+    "conventions": "Small commits. Plain, readable code. No new dependencies unless necessary.",
+    "user_types": "A single developer.",
+    "design_notes": ""
+  }
+}
