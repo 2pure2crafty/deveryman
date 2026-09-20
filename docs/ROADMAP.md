@@ -5,11 +5,13 @@ log into D'everyman and from there you operate on your projects through whicheve
 capability fits, Conductor (manual, on-demand agents) or DPA (the automated
 build pipeline). This repo is the monorepo that holds all of it.
 
-> Status: Phases 1-3 done and verified; Phase 4 partially done (shared framework
-> + read-only DPA dashboard live); Phase 5 launcher done. The remaining Phase 4
-> work (underseer multi-project refactor, pipeline state consolidation, DPA
-> write-controls) is gated on un-pausing the pipeline for live verification and
-> is sub-planned in `FUTURE.md`. Conductor has migrated into this repo.
+> Status: Phases 1-3 done; Phase 5 launcher done; Phase 4 substantially done, the
+> generic multi-project DPA is built and VERIFIED live (a full 7-stage cycle ran
+> on a fresh sandbox project, committing working code that passes its checks),
+> with a per-project systemd supervisor, a shared `projects.json`, and a
+> per-project DPA dashboard. What remains: DPA write-controls (a scoped sudo
+> rule), migrating HDS onto the generic daemon, and converging Conductor onto the
+> shared framework. See `FUTURE.md`. The project is now "D'everyman".
 
 ## The mental model
 
