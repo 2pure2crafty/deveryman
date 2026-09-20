@@ -1,0 +1,12 @@
+# Per-deployment state and secrets stay out of git (each app under here keeps
+# its own live registry/config outside the tree or gitignored).
+**/registry.json
+**/projects.json
+conductor.env
+.env
+*.local
+*.local.*
+SESSION.md
+agent-*.jsonl
+*.swp
+.DS_Store
