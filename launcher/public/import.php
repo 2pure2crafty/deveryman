@@ -41,35 +41,54 @@ $slug  = slugify($label);
 
 $errors = [];
 if ($slug === null) $errors[] = 'Project name did not produce a valid slug.';
-if ($repo === '' || !preg_match('#^([\w.-]+/[\w.-]+|https?://[\w./:@-]+|git@[\w.:/-]+)$#', $repo)) {
+// The owner/name form must not begin with a dash (it is passed positionally to
+// gh, which has no end-of-options separator; a leading-dash value would be read
+// as a flag). URLs are anchored to http/git@ so they cannot start with a dash.
+if ($repo === '' || !preg_match('#^([\w][\w.-]*/[\w.-]+|https?://[\w./:@-]+|git@[\w.:/-]+)$#', $repo)) {
     $errors[] = 'Repo must be owner/name or a git URL.';
 }
-$dest = $importsRoot . '/' . ($slug ?? '');
+
+// Each imported project gets its own container dir. The git checkout lives in a
+// "repo" subdir; project.json and all pipeline artifacts (pipeline_root) live
+// alongside it, NOT inside the checkout, so the pipeline never commits its own
+// scaffolding into the user's repository. The container also matches the systemd
+// template's expected config path (<projects-dir>/<slug>/project.json).
+$dest    = $importsRoot . '/' . ($slug ?? '');
+$repoDir = $dest . '/repo';
 if ($slug !== null && is_dir($dest)) $errors[] = 'A project already exists at ' . $dest . '.';
 
 if (!$errors) {
-    // Clone: gh for owner/name (private repos, your auth), git for a URL.
-    if (preg_match('#^[\w.-]+/[\w.-]+$#', $repo)) {
-        [$e, , $err] = fw_run_cmd(['gh', 'repo', 'clone', $repo, $dest], null, '', 180);
-    } else {
-        [$e, , $err] = fw_run_cmd(['git', 'clone', $repo, $dest], null, '', 180);
+    if (!@mkdir($dest, 0775, true) && !is_dir($dest)) {
+        $errors[] = 'Could not create project directory at ' . $dest . '.';
     }
-    if ($e !== 0) $errors[] = 'Clone failed: ' . trim($err);
 }
 
 if (!$errors) {
-    // Register in projects.json (the shared registry).
-    $reg = is_file($projectsPath) ? (json_decode((string) file_get_contents($projectsPath), true) ?: []) : [];
-    $reg['projects'] ??= [];
+    // Clone: gh for owner/name (private repos, your auth), git for a URL. The git
+    // form gets a `--` end-of-options guard; the gh form relies on the leading-dash
+    // rejection above (gh repo clone uses `--` to forward git flags, not to end
+    // its own options, so `--` is unsafe there).
+    if (preg_match('#^[\w][\w.-]*/[\w.-]+$#', $repo)) {
+        [$e, , $err] = fw_run_cmd(['gh', 'repo', 'clone', $repo, $repoDir], null, '', 180);
+    } else {
+        [$e, , $err] = fw_run_cmd(['git', 'clone', '--', $repo, $repoDir], null, '', 180);
+    }
+    if ($e !== 0) {
+        @rmdir($dest); // clean up the empty container so a retry isn't blocked
+        $errors[] = 'Clone failed: ' . trim($err);
+    }
+}
+
+if (!$errors) {
     $caps = [];
     if ($capC) $caps['conductor'] = true;
     if ($capD) {
         // Let a one-shot Haiku read the clone and describe the stack for the DPA context.
         $listing = '';
-        [, $ls] = fw_run_cmd(['bash', '-lc', 'ls -a1 ' . escapeshellarg($dest) . ' | head -40']);
-        $listing .= "Files:\n" . $ls;
+        [, $ls] = fw_run_cmd(['ls', '-a1', $repoDir]);
+        $listing .= "Files:\n" . implode("\n", array_slice(explode("\n", trim($ls)), 0, 40));
         foreach (['package.json', 'README.md', 'composer.json', 'go.mod', 'requirements.txt'] as $f) {
-            if (is_file("$dest/$f")) $listing .= "\n\n=== $f ===\n" . substr((string) file_get_contents("$dest/$f"), 0, 1500);
+            if (is_file("$repoDir/$f")) $listing .= "\n\n=== $f ===\n" . substr((string) file_get_contents("$repoDir/$f"), 0, 1500);
         }
         $ctxJson = fw_reason(
             'Given this repo listing and key files, output ONLY a compact JSON object with keys '
@@ -80,7 +99,7 @@ if (!$errors) {
         $ctx = json_decode($ctxJson, true) ?: [];
         $projectJson = [
             'name' => $slug, 'label' => $label,
-            'repo_root' => $dest, 'pipeline_root' => "$dest/.pipeline",
+            'repo_root' => $repoDir, 'pipeline_root' => "$dest/pipeline",
             'tmux_prefix' => strtoupper(substr($slug, 0, 6)),
             'git_user' => null, 'autonomy_level' => 1, 'poll_interval' => 30,
             'stages' => ['features', 'dev', 'reviewer'],
@@ -92,11 +111,28 @@ if (!$errors) {
                 'user_types' => '', 'design_notes' => '',
             ],
         ];
-        file_put_contents("$dest/project.json", json_encode($projectJson, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        if (!fw_write_json_atomic("$dest/project.json", $projectJson)) {
+            $errors[] = 'Could not write project.json (check disk/permissions).';
+        }
         $caps['dpa'] = ['config' => "$dest/project.json"];
     }
-    $reg['projects'][$slug] = ['label' => $label, 'path' => $dest, 'capabilities' => $caps];
-    file_put_contents($projectsPath, json_encode($reg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+}
+
+if (!$errors) {
+    // Register in projects.json (the shared registry) under an exclusive lock, so
+    // a concurrent import cannot clobber it, and surface a write failure instead of
+    // redirecting as if it had succeeded.
+    $ok = fw_update_json($projectsPath, function (array $reg) use ($slug, $label, $dest, $caps): array {
+        $reg['projects'] ??= [];
+        $reg['projects'][$slug] = ['label' => $label, 'path' => $dest, 'capabilities' => $caps];
+        return $reg;
+    });
+    if (!$ok) {
+        $errors[] = 'Clone succeeded but registering the project failed (check ' . $projectsPath . ').';
+    }
+}
+
+if (!$errors) {
     header('Location: /');
     exit;
 }

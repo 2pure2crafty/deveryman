@@ -13,6 +13,7 @@ import sys
 import time
 import json
 import shutil
+import hashlib
 import datetime
 import subprocess
 from pathlib import Path
@@ -26,9 +27,20 @@ AGENT_TEMPLATES = HERE / "agents"   # generic role templates, one dir per stage
 # --------------------------------------------------------------------------- #
 
 class Project:
+    REQUIRED_KEYS = ("name", "repo_root", "stages")
+
     def __init__(self, config_path: str):
         self.config_path = Path(config_path).resolve()
         self.cfg = json.loads(self.config_path.read_text())
+        # Fail loudly and clearly on a malformed config, rather than crash-looping
+        # under systemd with a bare KeyError deep in construction. The dashboard
+        # tolerates some of these keys as optional; the daemon genuinely needs them.
+        missing = [k for k in self.REQUIRED_KEYS if k not in self.cfg]
+        if missing:
+            raise ValueError(
+                f"{self.config_path}: project.json is missing required key(s): "
+                f"{', '.join(missing)}"
+            )
         self.name    = self.cfg["name"]
         self.label   = self.cfg.get("label", self.name)
         self.repo    = Path(self.cfg["repo_root"])
@@ -120,6 +132,7 @@ def instantiate(p: "Project"):
             "**Current stage:** none\n"
             "**Stage status:** IDLE\n"
             "**Current feature:** none\n"
+            "**Current feature id:** \n"
             "**Current cycle:** none\n"
             "**Current branch:** none\n"
             "**Kick-back count:** 0\n"
@@ -165,6 +178,12 @@ def write_state(p: "Project", updates: dict):
                 seen.add(key)
                 continue
         out.append(line)
+    # Append any updates whose key was not already present in the file, otherwise a
+    # brand-new state field (e.g. current_feature_id) would be silently dropped.
+    for key, val in keys.items():
+        if key not in seen:
+            label = key.replace("_", " ").capitalize()
+            out.append(f"**{label}:** {val}")
     p.state_file.write_text("\n".join(out) + "\n")
 
 
@@ -217,6 +236,26 @@ def _tmux(*args):
     return subprocess.run(["tmux", *args], capture_output=True, text=True)
 
 
+def _git(p: "Project", *args):
+    """Run a git command in the project repo, as git_user if configured."""
+    base = ["git", "-C", str(p.repo), *args]
+    if p.git_user:
+        base = ["sudo", "-u", p.git_user, *base]
+    return subprocess.run(base, capture_output=True, text=True)
+
+
+def checkout_branch(p: "Project", branch: str) -> tuple[bool, str]:
+    """Deterministically put the repo working tree on `branch`, creating it from
+    the current HEAD if it does not exist. The daemon owns branch isolation rather
+    than trusting each agent to create the branch itself; if this fails we do not
+    start the feature on the wrong branch. Returns (ok, message)."""
+    if _git(p, "rev-parse", "--verify", branch).returncode == 0:
+        r = _git(p, "checkout", branch)
+    else:
+        r = _git(p, "checkout", "-b", branch)
+    return (r.returncode == 0, (r.stderr or r.stdout).strip())
+
+
 def session_alive(p: "Project", stage: str) -> bool:
     return _tmux("has-session", "-t", p.tmux(stage)).returncode == 0
 
@@ -266,19 +305,28 @@ def start_agent(p: "Project", stage: str, feature: str, cycle: str, branch: str,
     return True
 
 
+def _digest(path: Path) -> str | None:
+    """Content fingerprint of a file, or None if it does not exist. Detecting a
+    change by content (not just mtime) is immune to second-granularity clocks and
+    same-second rewrites."""
+    try:
+        return hashlib.md5(path.read_bytes()).hexdigest()
+    except FileNotFoundError:
+        return None
+
+
 def wrap_up_agent(p: "Project", stage: str, timeout: int = 90):
     if not session_alive(p, stage):
         return
     session_md = p.agent_dir(stage) / "SESSION.md"
-    before = session_md.stat().st_mtime if session_md.exists() else None
+    before = _digest(session_md)
     _tmux("send-keys", "-t", p.tmux(stage), "/wrap-up", "Enter")
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if session_md.exists():
-            m = session_md.stat().st_mtime
-            if before is None or m > before:
-                log(p, f"Wrap-up handoff written for {stage}")
-                return
+        now = _digest(session_md)
+        if now is not None and now != before:
+            log(p, f"Wrap-up handoff written for {stage}")
+            return
         time.sleep(2)
     log(p, f"Wrap-up for {stage} did not confirm within {timeout}s; killing anyway")
 
@@ -357,14 +405,24 @@ def start_feature(p: "Project", item: dict):
     safe = re.sub(r'[^a-z0-9]+', '-', feature.lower()).strip('-')[:40].strip('-')
     cycle = "cycle-001"
     branch = f"{p.feature_prefix}{item['id']}-{safe}"
+    # Create/switch to the feature branch ourselves before any agent runs, so work
+    # is isolated deterministically. If it fails, escalate instead of proceeding on
+    # whatever branch happens to be checked out.
+    ok, msg = checkout_branch(p, branch)
+    if not ok:
+        log(p, f"ERROR: could not checkout branch {branch}: {msg}")
+        escalate(p, f"Could not create feature branch for '{feature}'",
+                 f"git checkout of {branch} failed: {msg}")
+        return
     update_queue_status(p, item["id"], "ACTIVE")
     first = p.stages[0]
     write_state(p, {
         "current_stage": first, "stage_status": "IN PROGRESS",
-        "current_feature": feature, "current_cycle": cycle, "current_branch": branch,
+        "current_feature": feature, "current_feature_id": item["id"],
+        "current_cycle": cycle, "current_branch": branch,
         "kick_back_count": "0", "waiting_for": "none",
     })
-    log(p, f"Starting feature '{feature}' at stage {first} on branch {branch}")
+    log(p, f"Starting feature '{feature}' (id {item['id']}) at stage {first} on branch {branch}")
     start_agent(p, first, feature, cycle, branch)
 
 
@@ -372,8 +430,21 @@ def handle(p: "Project", state: dict, items: list):
     stage  = state.get("current_stage", "none")
     status = state.get("stage_status", "IDLE").upper()
     feature = state.get("current_feature", "none")
+    feature_id = state.get("current_feature_id", "")
     cycle   = state.get("current_cycle", "cycle-001")
     branch  = state.get("current_branch", "none")
+
+    def mark_active_feature(new_status: str):
+        """Update the queue row for the feature currently in progress. Prefer the
+        id recorded in state; fall back to the sole ACTIVE row only if state predates
+        the id being tracked. Using the recorded id avoids mislabelling the wrong
+        row when more than one is somehow ACTIVE."""
+        fid = feature_id
+        if not fid:
+            active = [i for i in items if i["status"] == "ACTIVE"]
+            fid = active[0]["id"] if active else None
+        if fid:
+            update_queue_status(p, fid, new_status)
 
     if status in ("IDLE", "") or stage == "none":
         nxt = next_queued(items)
@@ -388,13 +459,12 @@ def handle(p: "Project", state: dict, items: list):
         nxt = next_stage(p, stage)
         if nxt is None:
             # end of pipeline for this feature
-            active = [i for i in items if i["status"] == "ACTIVE"]
-            if active:
-                update_queue_status(p, active[0]["id"], "COMPLETE")
+            mark_active_feature("COMPLETE")
             log(p, f"Feature '{feature}' complete (finished stage {stage}).")
             kill_agent(p, stage)
             write_state(p, {"current_stage": "none", "stage_status": "IDLE",
-                            "current_feature": "none", "waiting_for": "none"})
+                            "current_feature": "none", "current_feature_id": "",
+                            "waiting_for": "none"})
             return
         if p.autonomy >= 3:
             kill_agent(p, stage)
@@ -412,14 +482,12 @@ def handle(p: "Project", state: dict, items: list):
         if count >= 2:
             # Double kick-back: stop looping. Quarantine the feature and escalate
             # to Patch with a triaged summary (the one-shot judgment step).
-            active = [i for i in items if i["status"] == "ACTIVE"]
-            if active:
-                update_queue_status(p, active[0]["id"], "QUARANTINED")
+            mark_active_feature("QUARANTINED")
             escalate(p, f"Feature '{feature}' double kicked-back at {stage}",
                      f"Kicked back {count} times; quarantined pending your call.")
             write_state(p, {"current_stage": "none", "stage_status": "BLOCKED",
-                            "current_feature": "none", "kick_back_count": str(count),
-                            "waiting_for": "PATCH"})
+                            "current_feature": "none", "current_feature_id": "",
+                            "kick_back_count": str(count), "waiting_for": "PATCH"})
             return
         target = p.kickback.get(stage, p.stages[0])
         note = f"Kicked back from {stage}. See the feedback in {p.docs}/dev-inbox/."
@@ -438,7 +506,13 @@ def main():
     if len(sys.argv) < 2:
         print("usage: underseer.py /path/to/project.json", file=sys.stderr)
         sys.exit(1)
-    p = Project(sys.argv[1])
+    try:
+        p = Project(sys.argv[1])
+    except (ValueError, json.JSONDecodeError, FileNotFoundError) as e:
+        # A clear one-line diagnostic in the journal beats a bare traceback in a
+        # systemd restart loop. Exit non-zero; the config must be fixed first.
+        print(f"FATAL: cannot load project config: {e}", file=sys.stderr)
+        sys.exit(2)
     instantiate(p)
     log(p, f"underseer starting for project '{p.name}' "
            f"(stages={p.stages}, autonomy={p.autonomy}, poll={p.poll}s)")

@@ -84,6 +84,44 @@ function fw_run_cmd(array $argv, ?string $cwd = null, string $stdin = '', int $t
     return [proc_close($p), $out, $err];
 }
 
+/**
+ * Write JSON atomically: encode, write to a temp file, then rename over the
+ * target (rename is atomic on the same filesystem). A crash or full disk mid-write
+ * leaves the original intact instead of a truncated, unparseable file. Returns
+ * true on success. Callers MUST check the return value.
+ */
+function fw_write_json_atomic(string $path, $data): bool {
+    $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+    if ($json === false) return false;
+    $tmp = $path . '.tmp.' . getmypid();
+    if (@file_put_contents($tmp, $json, LOCK_EX) === false) return false;
+    if (!@rename($tmp, $path)) { @unlink($tmp); return false; }
+    return true;
+}
+
+/**
+ * Locked read-modify-write of a JSON file. Opens the file, takes an exclusive
+ * lock, decodes, hands the array to $mutator, and writes the returned array back
+ * under the same lock, so concurrent writers cannot clobber each other. Returns
+ * true on success, false if the file could not be opened/locked/written.
+ */
+function fw_update_json(string $path, callable $mutator): bool {
+    $fh = @fopen($path, 'c+');
+    if ($fh === false) return false;
+    if (!flock($fh, LOCK_EX)) { fclose($fh); return false; }
+    $raw = stream_get_contents($fh);
+    $data = ($raw !== false && $raw !== '') ? (json_decode($raw, true) ?: []) : [];
+    $updated = $mutator($data);
+    rewind($fh);
+    ftruncate($fh, 0);
+    $json = json_encode($updated, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+    $ok = ($json !== false) && (fwrite($fh, $json) !== false);
+    fflush($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
+    return $ok;
+}
+
 /** One-shot headless reasoning via the claude CLI (Haiku). Returns text or null. */
 function fw_reason(string $prompt, string $stdin = '', int $timeout = 120): ?string {
     [$exit, $out] = fw_run_cmd(['claude', '--model', 'haiku', '-p', $prompt], null, $stdin, $timeout);

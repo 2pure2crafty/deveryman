@@ -71,18 +71,24 @@ function run_cycle(array &$state): void {
         $current = [];
         foreach ($pending as $p) {
             $nkey = $p['project'] . '/' . $p['agent'];
-            $current[$nkey] = true;
-            if (empty($notified[$nkey])) {
-                $click = conductor_dashboard_url();
-                $ok = push_notify(
-                    $p['projectLabel'] . ' - ' . $p['agentLabel'] . ' needs attention',
-                    $p['prompt']['question'] . "\n(" . implode(' / ', $p['prompt']['options']) . ')',
-                    ['tags' => 'warning', 'priority' => '4'] + ($click ? ['click' => $click] : [])
-                );
-                daemon_log("NOTIFY $nkey pending prompt; push " . ($ok ? 'sent' : 'failed'));
+            if (!empty($notified[$nkey])) {
+                // Already alerted on this prompt; keep it marked so we don't spam.
+                $current[$nkey] = true;
+                continue;
             }
+            $click = conductor_dashboard_url();
+            $ok = push_notify(
+                $p['projectLabel'] . ' - ' . $p['agentLabel'] . ' needs attention',
+                $p['prompt']['question'] . "\n(" . implode(' / ', $p['prompt']['options']) . ')',
+                ['tags' => 'warning', 'priority' => '4'] + ($click ? ['click' => $click] : [])
+            );
+            // Only mark as notified if the push actually went out. A failed send
+            // stays unmarked so the next cycle retries it while the prompt persists,
+            // instead of being silently swallowed forever.
+            if ($ok) $current[$nkey] = true;
+            daemon_log("NOTIFY $nkey pending prompt; push " . ($ok ? 'sent' : 'failed (will retry)'));
         }
-        $state['_notified'] = $current; // drop cleared ones so they re-arm
+        $state['_notified'] = $current; // drop cleared/unsent ones so they re-arm
     }
 
     foreach ($registry['projects'] as $pSlug => $project) {

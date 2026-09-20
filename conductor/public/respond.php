@@ -26,14 +26,14 @@ if ($action === 'approve') {
     // Default-highlighted option (usually "Yes") - plain Enter selects it.
     run_cmd(['tmux', 'send-keys', '-t', $agent['tmux'], 'Enter']);
 } elseif ($action === 'deny') {
-    // "No" is reliably the last item in Claude Code's permission menu; walk down to it.
-    // Keystrokes need spacing out - sent back-to-back, the TUI's redraw can drop one.
-    $optionCount = max(1, (int)($_POST['option_count'] ?? 3));
-    for ($i = 0; $i < $optionCount - 1; $i++) {
-        run_cmd(['tmux', 'send-keys', '-t', $agent['tmux'], 'Down']);
-        usleep(300000);
-    }
-    run_cmd(['tmux', 'send-keys', '-t', $agent['tmux'], 'Enter']);
+    // Deny = cancel the permission prompt. Claude Code treats Escape as "reject"
+    // ("Esc to cancel"), so a single Escape declines the pending tool call. This
+    // is fail-safe by construction: it can never land on the default (approve)
+    // option, and it does nothing harmful if the prompt has already cleared.
+    // We deliberately do NOT navigate by a client-supplied option count: a wrong,
+    // stale, or forged count could send zero Down keys and let Enter APPROVE the
+    // very prompt the user was trying to deny.
+    run_cmd(['tmux', 'send-keys', '-t', $agent['tmux'], 'Escape']);
 } else {
     error_page('Unknown action.', 'index.php');
 }

@@ -452,7 +452,10 @@ function perform_wrapdown(array $project, array $agent, int $waitSeconds = 90): 
         return ['updated' => false, 'killed' => false, 'reason' => 'not running'];
     }
     $sessionMd = agent_dir($project, $agent) . '/SESSION.md';
-    $before = file_exists($sessionMd) ? filemtime($sessionMd) : null;
+    // Fingerprint by content, not mtime: filemtime() is integer-second, so a
+    // same-second rewrite would be missed by a strict `>` comparison and falsely
+    // time out. A content hash detects the write regardless of clock granularity.
+    $before = file_exists($sessionMd) ? md5_file($sessionMd) : null;
 
     run_cmd(['tmux', 'send-keys', '-t', $tmux, '/wrap-up', 'Enter']);
 
@@ -461,8 +464,8 @@ function perform_wrapdown(array $project, array $agent, int $waitSeconds = 90): 
     while (time() < $deadline) {
         clearstatcache(true, $sessionMd);
         if (file_exists($sessionMd)) {
-            $m = filemtime($sessionMd);
-            if ($before === null || $m > $before) { $updated = true; break; }
+            $m = md5_file($sessionMd);
+            if ($before === null || $m !== $before) { $updated = true; break; }
         }
         sleep(1);
     }
