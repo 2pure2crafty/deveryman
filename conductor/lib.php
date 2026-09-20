@@ -13,30 +13,21 @@ define('WRAPUP_SKILL_SRC', __DIR__ . '/../shared/memory-kit/skills/wrap-up/SKILL
 define('SPAWN_FINISH_SCRIPT', __DIR__ . '/spawn-finish.sh');
 define('SWITCH_TERMINAL_SCRIPT', __DIR__ . '/switch-terminal-finish.sh');
 
-/**
- * Parse KEY=value lines from the deployment config file (CONDUCTOR_CONFIG_FILE).
- * Cached per request. Values may be quoted. Missing file returns [].
- */
+// Converge onto the shared framework: the generic primitives (config parsing,
+// auth, escaping, process runner) live in shared/framework and Conductor
+// delegates to them, so there is one implementation. Point the framework at the
+// same config file Conductor uses.
+if (!defined('DEVERYMAN_CONFIG')) define('DEVERYMAN_CONFIG', CONDUCTOR_CONFIG_FILE);
+require_once __DIR__ . '/../shared/framework/framework.php';
+
+/** Config parsing, delegated to the shared framework. */
 function conductor_config(): array {
-    static $config = null;
-    if ($config !== null) return $config;
-    $config = [];
-    if (is_readable(CONDUCTOR_CONFIG_FILE)) {
-        foreach (file(CONDUCTOR_CONFIG_FILE, FILE_IGNORE_NEW_LINES) as $line) {
-            $line = trim($line);
-            if ($line === '' || $line[0] === '#') continue;
-            if (preg_match('/^([A-Z_][A-Z0-9_]*)=(.*)$/', $line, $m)) {
-                $config[$m[1]] = trim($m[2], "\"'");
-            }
-        }
-    }
-    return $config;
+    return fw_config();
 }
 
 /** Read a config value, falling back to $default if unset. */
 function conductor_config_get(string $key, string $default = ''): string {
-    $config = conductor_config();
-    return $config[$key] ?? $default;
+    return fw_config_get($key, $default);
 }
 
 /**
@@ -146,24 +137,14 @@ function conductor_base_path(): string {
     return $p;
 }
 
+/** Auth, delegated to the shared framework. */
 function require_auth(): void {
-    $user = conductor_config_get('CONDUCTOR_USER');
-    $pass = conductor_config_get('CONDUCTOR_PASS');
-    $givenUser = $_SERVER['PHP_AUTH_USER'] ?? '';
-    $givenPass = $_SERVER['PHP_AUTH_PW'] ?? '';
-    $ok = $user !== '' && $pass !== ''
-        && hash_equals($user, $givenUser)
-        && hash_equals($pass, $givenPass);
-    if (!$ok) {
-        header('WWW-Authenticate: Basic realm="Conductor"');
-        http_response_code(401);
-        echo "Auth required.";
-        exit;
-    }
+    fw_require_auth();
 }
 
+/** HTML escape, delegated to the shared framework. */
 function h(string $s): string {
-    return htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
+    return fw_h($s);
 }
 
 /** Lowercase slug, [a-z0-9-] only, non-empty. Returns null if input can't produce a safe slug. */
@@ -223,39 +204,9 @@ function agent_dir(array $project, array $agent): string {
  * [exitCode, stdout, stderr]. On timeout: exit 124, whatever was captured, and a
  * "timeout" note on stderr.
  */
+/** Process runner, delegated to the shared framework. */
 function run_cmd(array $argv, ?string $cwd = null, string $stdin = '', int $timeout = 0): array {
-    $descriptors = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-    $proc = proc_open($argv, $descriptors, $pipes, $cwd);
-    if (!is_resource($proc)) return [1, '', 'failed to start process'];
-
-    if ($stdin !== '') fwrite($pipes[0], $stdin);
-    fclose($pipes[0]);
-    stream_set_blocking($pipes[1], false);
-    stream_set_blocking($pipes[2], false);
-
-    $stdout = '';
-    $stderr = '';
-    $deadline = $timeout > 0 ? microtime(true) + $timeout : 0;
-    while (true) {
-        $stdout .= stream_get_contents($pipes[1]);
-        $stderr .= stream_get_contents($pipes[2]);
-        $status = proc_get_status($proc);
-        if (!$status['running']) break;
-        if ($deadline && microtime(true) > $deadline) {
-            proc_terminate($proc, 9);
-            $stdout .= stream_get_contents($pipes[1]);
-            $stderr .= stream_get_contents($pipes[2]) . "\n[timeout]";
-            fclose($pipes[1]); fclose($pipes[2]); proc_close($proc);
-            return [124, $stdout, $stderr];
-        }
-        usleep(50000);
-    }
-    $stdout .= stream_get_contents($pipes[1]);
-    $stderr .= stream_get_contents($pipes[2]);
-    fclose($pipes[1]);
-    fclose($pipes[2]);
-    $exit = proc_close($proc);
-    return [$exit, $stdout, $stderr];
+    return fw_run_cmd($argv, $cwd, $stdin, $timeout);
 }
 
 /**
