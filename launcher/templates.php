@@ -5,69 +5,31 @@ declare(strict_types=1);
  * capabilities it gets, the DPA config shape, and the Conductor agents to seed).
  * The DPA is only the automated middle; a template is the scaffold around it.
  *
- * "DPA standard" is the full pipeline shape. "None" is a bare project. This is a
- * data definition on purpose: the customization branch adds more templates without
- * touching the applier.
+ * This file is now a thin ADAPTER. The templates themselves live in the
+ * user-editable pipeline-template registry (launcher/registry.php); here we project
+ * each one into the shape the applier (deveryman_apply_template) consumes:
+ * { label, description, conductor, conductor_agents, dpa }. The `dpa` block is the
+ * compiled underseer config (deveryman_compile_template), or null for a bare project.
  */
 
+require_once __DIR__ . '/registry.php';
+
 /**
- * All project templates, keyed by id. Each entry:
- *   label            human-readable name (shown in the dropdown)
- *   description      one line shown under the option
- *   conductor        bool: enable the Conductor lens
- *   conductor_agents string[]: agent role templates to seed on the Conductor side
- *   dpa              null, or the DPA project.json shape (the applier fills in the
- *                    per-project keys: name, label, repo_root, pipeline_root,
- *                    tmux_prefix, git_user, context)
+ * All project templates, keyed by id, in the applier-facing shape. Derived from the
+ * pipeline-template registry: `dpa` is the compiled config (null = bare project).
  */
 function deveryman_templates(): array {
-    return [
-        'none' => [
-            'label' => 'None (bare project)',
-            'description' => 'Just register the project and its new repo. Add capabilities later.',
-            'conductor' => false,
-            'conductor_agents' => [],
-            'dpa' => null,
-        ],
-        'dpa-standard' => [
-            'label' => 'DPA standard',
-            'description' => 'The full shape: Conductor plus the automated DPA pipeline, branching, '
-                . 'backlog, and human-gated deploy. All agents created, none spun up.',
-            'conductor' => true,
-            'conductor_agents' => ['ideas'],
-            'dpa' => [
-                'stages' => ['features', 'acceptance', 'dev', 'testing-staging',
-                             'integration-testing', 'reviewer', 'ux-ui'],
-                'kickback_target' => [
-                    'testing-staging' => 'dev',
-                    'integration-testing' => 'dev',
-                    'reviewer' => 'dev',
-                    'ux-ui' => 'dev',
-                ],
-                'autonomy_level' => 3,
-                'poll_interval' => 30,
-                'base_branch' => 'staging',
-                'release_branch' => 'main',
-                'feature_branch_prefix' => 'feature/',
-                'backlog_file' => 'product-backlog.md',
-                'deployment_note' => 'dev-inbox/deployment-note.md',
-                'pipeline_version' => '1',
-                // Per-stage file wiring (doc-relative; <slug> = the feature slug).
-                // The daemon injects these as a read-only pipeline-instructions.md
-                // overlay and pre/post-checks the declared files. Stages whose work
-                // is code on the branch (dev, testing, review) declare no doc output.
-                'io' => [
-                    'features'            => ['reads' => [], 'writes' => ['dev-inbox/build-phase.md']],
-                    'acceptance'          => ['reads' => ['dev-inbox/build-phase.md'], 'writes' => ['acceptance/<slug>-criteria.md']],
-                    'dev'                 => ['reads' => ['dev-inbox/build-phase.md'], 'writes' => []],
-                    'testing-staging'     => ['reads' => ['acceptance/<slug>-criteria.md', 'dev-inbox/build-phase.md'], 'writes' => []],
-                    'integration-testing' => ['reads' => ['dev-inbox/build-phase.md'], 'writes' => []],
-                    'reviewer'            => ['reads' => ['dev-inbox/build-phase.md'], 'writes' => []],
-                    'ux-ui'               => ['reads' => ['dev-inbox/build-phase.md'], 'writes' => []],
-                ],
-            ],
-        ],
-    ];
+    $out = [];
+    foreach (deveryman_pipeline_templates() as $id => $tpl) {
+        $out[$id] = [
+            'label' => $tpl['label'] ?? $id,
+            'description' => $tpl['description'] ?? '',
+            'conductor' => (bool) ($tpl['conductor'] ?? false),
+            'conductor_agents' => $tpl['conductor_agents'] ?? [],
+            'dpa' => deveryman_compile_template($tpl),
+        ];
+    }
+    return $out;
 }
 
 /** One template by id, or null. */

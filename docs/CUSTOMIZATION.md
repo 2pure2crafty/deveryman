@@ -22,14 +22,18 @@ execution is deferred.
 
 ### 1. Foundation: the data model + explicit agent contract
 - [x] Reverse-engineer DPA standard into the model (see `PIPELINE-MODEL.md`).
-- [ ] Nail the schema: agent type = `{id, label, role, reads[], writes[],
+- [x] Nail the schema: agent type = `{id, label, kind, role, reads[], writes[],
   done_signal, kickback{target, doc}}`; pipeline template = `{branching, backlog,
-  deployment_note, nodes[], flow[], artifacts[], gates[]}`.
-- [ ] Make the underseer per-agent contract explicit: pass each agent its input
-  file(s), output file, and done-signal via `startup-context.md` (today it is
-  implicit convention).
-- [ ] Store agent types and templates as user-editable JSON registries, not code
-  (generalize the hardcoded `launcher/templates.php`).
+  deployment_note, nodes[], flow[], gates[]}`. See `launcher/registry.php` (the
+  schema, seeds, `deveryman_compile_template`, and `deveryman_validate_template`).
+- [x] Make the underseer per-agent contract explicit: each agent gets its input
+  file(s), output file(s), and done-signal via the read-only
+  `pipeline-instructions.md` overlay (Safeguard 1), pointed to from
+  `startup-context.md`.
+- [x] Store agent types and templates as user-editable JSON registries, not code
+  (`launcher/registries/agent-types.json` + `pipeline-templates.json`, seeded from
+  the builtins; `launcher/templates.php` is now a thin adapter that compiles a
+  template down to the project.json the daemon runs).
 
 ### 2. Custom agents (agent-type editor)
 - [ ] Save an agent as a reusable type (e.g. an accessibility agent): its role,

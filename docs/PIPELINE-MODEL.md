@@ -79,8 +79,11 @@ backlog -> product -> build-queue
         -> gate:promote (base -> release) -> gate:deploy -> gate:verify
 ```
 
-Kickback edges: acceptance->features, dev->features, testing-staging->dev,
-integration-testing->dev, reviewer->dev, ux-ui->dev.
+Kickback edges the model can express: acceptance->features, dev->features,
+testing-staging->dev, integration-testing->dev, reviewer->dev, ux-ui->dev. The
+shipped DPA-standard default wires only the four dev-targeted ones (its
+`kickback_target`); acceptance and dev carry no kickback in the seed, matching the
+live config. The other two illustrate what a custom template could wire.
 
 Artifact wiring (producer -> file -> consumers):
 
