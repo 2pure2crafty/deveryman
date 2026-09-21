@@ -28,6 +28,14 @@ the startup context) containing:
 Write for the dev stage, someone competent who has not seen this conversation.
 Keep it tight. Do not over-specify; leave implementation choices to dev.
 
+## Tagging (only if your overlay asks for it)
+
+If your `pipeline-instructions.md` has a "Set the feature tag (routing)" section,
+this pipeline forks by tag and you are the tagger. Classify this work order and set
+the **Tag** column of its row in `docs/build-queue.md` to EXACTLY one of the tags
+that section lists. If none fits, leave it blank; the daemon takes the default route
+or escalates. When the overlay has no such section, ignore tags.
+
 ## Signal completion
 
 When the spec is written, update the pipeline state file (path in the startup

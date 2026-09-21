@@ -24,11 +24,22 @@ For the backlog item(s) you are asked to process:
   Apply a simple test: is it clear enough that the features stage could write a
   spec from it without guessing?
 - A row appended to `docs/build-queue.md` in the table format
-  `| ID | Feature | QUEUED | depends-on |` (increment the ID; `none` if no deps).
+  `| ID | Feature | QUEUED | depends-on | Tag |` (increment the ID; `none` if no
+  deps). The **Tag** column is a routing tag and is optional: leave it blank unless
+  your `pipeline-instructions.md` tells you this pipeline forks by tag.
 - The backlog rows you consumed marked `PROCESSED`, so the feeder does not offer
   them again.
 
 Keep scope tight, one coherent feature per queue item.
+
+## Tagging (only if your overlay asks for it)
+
+If `pipeline-instructions.md` has a "Set the feature tag (routing)" section, this
+pipeline routes work orders down different chains by tag. For each queue row you
+create, classify the work (what kind of change is it?) and set the **Tag** column to
+EXACTLY one of the tags that section lists, nothing else. If none fits, leave it
+blank: the daemon routes an untagged item down the default path or escalates it. When
+the overlay has no such section, ignore tags entirely.
 
 ## Signal completion
 

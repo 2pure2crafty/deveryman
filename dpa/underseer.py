@@ -215,10 +215,12 @@ def instantiate(p: "Project"):
             "**Waiting for:** none\n"
         )
     if not p.queue_file.exists():
+        # The Tag column is optional (blank unless the pipeline forks by tag); it is
+        # the 5th column read_queue routes on.
         p.queue_file.write_text(
             "# Build queue\n\n"
-            "| ID | Feature | Status | Depends-on |\n"
-            "| -- | ------- | ------ | ---------- |\n"
+            "| ID | Feature | Status | Depends-on | Tag |\n"
+            "| -- | ------- | ------ | ---------- | --- |\n"
         )
 
 
@@ -888,10 +890,17 @@ def start_product_feeder(p: "Project"):
     note = (
         f"You are running as the product feeder. Read {p.docs}/{p.backlog_file}, and for "
         f"each row with Status QUEUED, append a build-queue row to {p.queue_file} in the "
-        f"format `| ID | Feature | QUEUED | none |` (increment the ID from the last queue "
-        f"row), then set that backlog row's Status to PROCESSED. When done, set "
-        f"**Stage status:** COMPLETE and stop."
+        f"format `| ID | Feature | QUEUED | none | |` (increment the ID from the last queue "
+        f"row; the trailing column is the routing Tag, left blank by default), then set that "
+        f"backlog row's Status to PROCESSED. When done, set **Stage status:** COMPLETE and stop."
     )
+    # If the feeder is this pipeline's tagger, hand it the controlled tag menu so it
+    # classifies each work order and fills the Tag column from that set (the overlay
+    # path only covers regular stages; the feeder has no io wiring).
+    if p.tag_stage == "product" and allowed_tags(p):
+        menu = ", ".join(f"`{t}`" for t in allowed_tags(p))
+        note += (f" This pipeline forks by tag: set each new row's Tag column to EXACTLY one of "
+                 f"{menu} (classify the work order); leave it blank only if none fits.")
     start_agent(p, "product", "(populate queue from backlog)", "none", note)
     log(p, f"Started product feeder ({n} backlog item(s) queued)")
 

@@ -155,8 +155,12 @@ single **merge node**. Still exclusive (one path per feature), so it keeps the
 - Decider: the tagger stage (or a human filling the work order) sets the tag; a
   deterministic guard match keeps routing transparent. An LLM router/classifier is a
   later upgrade.
-- [ ] Agent side (next): the product/features role writes the Tag column from the
-  overlay menu, and the build-queue format documents the optional Tag column.
+- [x] Agent side: the build-queue format grew an optional 5th **Tag** column (the
+  daemon seeds the header with it; `read_queue` still reads 4- or 5-column rows). The
+  product and features roles each gained a "Tagging (only if your overlay asks for
+  it)" section: when the overlay carries the tag menu, classify the work order and set
+  the Tag column to one of the listed tags, else leave it blank. When the product
+  feeder is itself the tagger, its note carries the menu (it has no overlay).
 
 ### Kickback contract (for the visual builder)
 Every review/test agent CAN kick back (it advertises a `kickback_doc`), but nothing
