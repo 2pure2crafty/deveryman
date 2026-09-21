@@ -353,11 +353,16 @@ function deveryman_resolve_node(array $node, array $agentTypes): ?array {
         'id'          => $node['id'] ?? $typeId,
         'agent_type'  => $typeId,
         'kind'        => $node['kind']        ?? $type['kind']        ?? 'stage',
+        // Which chain the node sits on: 'main' (the forward pipeline) or 'escalation'
+        // (a second chain reached only when a feature fails too often at one spot).
+        'chain'       => $node['chain']       ?? 'main',
         'reads'       => $node['reads']       ?? $type['reads']       ?? [],
         'writes'      => $node['writes']      ?? $type['writes']      ?? [],
         'done_signal' => $node['done_signal'] ?? $type['done_signal'] ?? '',
         // Kickback routing is wired on the node (per pipeline), never inherited from
-        // the type. The type only advertises the doc it leaves (kickback_doc).
+        // the type. The type only advertises the doc it leaves (kickback_doc). The
+        // kickback may also carry escalation_target + fail_threshold: after that many
+        // same-spot failures, the feature routes onto the escalation chain instead.
         'kickback'    => $node['kickback'] ?? null,
     ];
 }
@@ -402,20 +407,41 @@ function deveryman_compile_template(array $tpl): ?array {
         $r = deveryman_resolve_node($n, $agentTypes);
         if ($r !== null) $byId[$r['id']] = $r;
     }
-    $order = deveryman_flow_order(array_values($byId), $tpl['flow'] ?? []);
+    $flow = $tpl['flow'] ?? [];
 
-    $stages = []; $io = []; $kickback = [];
-    foreach ($order as $id) {
-        $n = $byId[$id] ?? null;
-        if ($n === null || ($n['kind'] ?? 'stage') !== 'stage') continue;
-        $stages[] = $id;
-        $io[$id] = ['reads' => array_values($n['reads']), 'writes' => array_values($n['writes'])];
-        if (!empty($n['kickback']['target'])) $kickback[$id] = $n['kickback']['target'];
+    // Order the main and escalation chains independently (each is its own linear
+    // sub-flow), so escalation stages never fall into the normal forward walk.
+    $mainNodes = []; $escNodes = [];
+    foreach ($byId as $id => $n) {
+        if (($n['kind'] ?? 'stage') !== 'stage') continue;   // gates are not stages
+        if (($n['chain'] ?? 'main') === 'escalation') $escNodes[$id] = $n; else $mainNodes[$id] = $n;
     }
+    $subFlow = function (array $nodes) use ($flow): array {
+        $ids = array_fill_keys(array_keys($nodes), true);
+        return array_values(array_filter($flow, fn($e) => isset($ids[$e['from'] ?? ''], $ids[$e['to'] ?? ''])));
+    };
+    $stages = deveryman_flow_order(array_values($mainNodes), $subFlow($mainNodes));
+    $escalationStages = deveryman_flow_order(array_values($escNodes), $subFlow($escNodes));
     if (!$stages) return null;
 
+    // io + kickback_target span both chains; escalation records the per-node route
+    // (target chain-head + same-spot threshold) taken after repeated failure.
+    $io = []; $kickback = []; $escalation = [];
+    foreach (array_merge($stages, $escalationStages) as $id) {
+        $n = $byId[$id] ?? null;
+        if ($n === null) continue;
+        $io[$id] = ['reads' => array_values($n['reads']), 'writes' => array_values($n['writes'])];
+        if (!empty($n['kickback']['target'])) $kickback[$id] = $n['kickback']['target'];
+        if (!empty($n['kickback']['escalation_target'])) {
+            $escalation[$id] = [
+                'target' => $n['kickback']['escalation_target'],
+                'threshold' => max(1, (int) ($n['kickback']['fail_threshold'] ?? 2)),
+            ];
+        }
+    }
+
     $b = $tpl['branching'] ?? [];
-    return [
+    $out = [
         'stages' => $stages,
         'kickback_target' => $kickback,
         'autonomy_level' => (int) ($tpl['autonomy_level'] ?? 3),
@@ -428,6 +454,11 @@ function deveryman_compile_template(array $tpl): ?array {
         'pipeline_version' => (string) ($tpl['pipeline_version'] ?? '1'),
         'io' => $io,
     ];
+    // Only emit escalation keys when the template actually uses them, so a plain
+    // pipeline (like DPA standard) compiles to exactly the config it did before.
+    if ($escalationStages) $out['escalation_stages'] = $escalationStages;
+    if ($escalation) $out['escalation'] = $escalation;
+    return $out;
 }
 
 /**
@@ -460,24 +491,40 @@ function deveryman_validate_template(array $tpl): array {
     foreach ($resolved as $id => $r) {
         $t = $r['kickback']['target'] ?? '';
         if ($t !== '' && !isset($ids[$t])) $problems[] = "Node '{$id}' kicks back to unknown node '{$t}'.";
+        $et = $r['kickback']['escalation_target'] ?? '';
+        if ($et !== '' && !isset($ids[$et])) $problems[] = "Node '{$id}' escalates to unknown node '{$et}'.";
     }
 
     // The connection contract, upstream-producer form (matches validate_wiring): walk
-    // the stage nodes in flow order; each declared input must have been written by an
-    // earlier stage, or be a prewired pipeline input. Gates read prewired files only.
-    $order = deveryman_flow_order(array_values($resolved), $tpl['flow'] ?? []);
+    // the main chain in flow order accumulating produced files, then the escalation
+    // chain (which reads what the main chain already produced). Each declared input
+    // must be written by an earlier stage or be a prewired pipeline input.
+    $flow = $tpl['flow'] ?? [];
+    $mainNodes = []; $escNodes = [];
+    foreach ($resolved as $id => $n) {
+        if (($n['kind'] ?? 'stage') !== 'stage') continue;
+        if (($n['chain'] ?? 'main') === 'escalation') $escNodes[$id] = $n; else $mainNodes[$id] = $n;
+    }
+    $subFlow = function (array $nodes) use ($flow): array {
+        $has = array_fill_keys(array_keys($nodes), true);
+        return array_values(array_filter($flow, fn($e) => isset($has[$e['from'] ?? ''], $has[$e['to'] ?? ''])));
+    };
     $prewired = ['product-backlog.md', 'build-queue.md',
                  $tpl['backlog_file'] ?? 'product-backlog.md',
                  $tpl['deployment_note'] ?? 'dev-inbox/deployment-note.md'];
     $produced = [];
-    foreach ($order as $id) {
-        $n = $resolved[$id] ?? null;
-        if ($n === null) continue;
-        foreach ($n['reads'] ?? [] as $rd) {
-            if (in_array($rd, $prewired, true) || in_array($rd, $produced, true)) continue;
-            $problems[] = "Node '{$id}' reads '{$rd}' which no earlier stage writes.";
+    $walk = function (array $order) use (&$produced, $resolved, $prewired, &$problems) {
+        foreach ($order as $id) {
+            $n = $resolved[$id] ?? null;
+            if ($n === null) continue;
+            foreach ($n['reads'] ?? [] as $rd) {
+                if (in_array($rd, $prewired, true) || in_array($rd, $produced, true)) continue;
+                $problems[] = "Node '{$id}' reads '{$rd}' which no earlier stage writes.";
+            }
+            foreach ($n['writes'] ?? [] as $wr) $produced[] = $wr;
         }
-        foreach ($n['writes'] ?? [] as $wr) $produced[] = $wr;
-    }
+    };
+    $walk(deveryman_flow_order(array_values($mainNodes), $subFlow($mainNodes)));
+    $walk(deveryman_flow_order(array_values($escNodes), $subFlow($escNodes)));
     return $problems;
 }

@@ -76,6 +76,13 @@ class Project:
         # overlay; the reusable agent CLAUDE.md is never edited.
         self.io = self.cfg.get("io", {})
         self.pipeline_version = str(self.cfg.get("pipeline_version", "1"))
+        # Escalation chain: a second, opt-in chain of stages a feature is routed onto
+        # when it fails too many times at the same spot (rather than being quarantined
+        # straight away). `escalation` maps a stage -> {"target": <chain head>,
+        # "threshold": N}; `escalation_stages` is that chain's ordered stage list.
+        # Empty for a plain pipeline, so nothing changes for existing projects.
+        self.escalation = self.cfg.get("escalation", {})
+        self.escalation_stages = self.cfg.get("escalation_stages", [])
 
     # derived paths
     @property
@@ -164,6 +171,10 @@ def instantiate(p: "Project"):
     p.docs.mkdir(parents=True, exist_ok=True)
     (p.docs / "dev-inbox").mkdir(exist_ok=True)
     for stage in p.stages:
+        materialize_agent(p, stage)
+    # The escalation chain's stages are materialized too (they run only when a feature
+    # is routed onto them, but their workspaces must exist up front).
+    for stage in p.escalation_stages:
         materialize_agent(p, stage)
     # Helpers that are not pipeline stages: the product feeder and the back-end
     # deploy/verify agents. Materialize them if a template exists. (Brainstorming is
@@ -509,7 +520,9 @@ def validate_wiring(p: "Project") -> list:
     problems = []
     produced = set()
     prewired = {"product-backlog.md", "build-queue.md", p.backlog_file}
-    for stage in p.stages:
+    # Walk the main chain first (accumulating produced files), then the escalation
+    # chain, which reads what the main chain already produced.
+    for stage in list(p.stages) + list(p.escalation_stages):
         io = p.io.get(stage, {})
         for r in io.get("reads", []):
             if r in prewired or r in produced:
@@ -521,7 +534,7 @@ def validate_wiring(p: "Project") -> list:
     # declared read/write that escapes (via .. or an absolute path) is rejected, so
     # one project can never be wired to read or write another's files.
     docs_real = p.docs.resolve()
-    for stage in p.stages:
+    for stage in list(p.stages) + list(p.escalation_stages):
         io = p.io.get(stage, {})
         for kind in ("reads", "writes"):
             for pth in io.get(kind, []):
@@ -715,11 +728,55 @@ def escalate(p: "Project", reason_str: str, detail: str = ""):
 # --------------------------------------------------------------------------- #
 
 def next_stage(p: "Project", stage: str) -> str | None:
-    if stage in p.stages:
-        i = p.stages.index(stage)
-        if i + 1 < len(p.stages):
-            return p.stages[i + 1]
+    """The next stage forward, within whichever chain `stage` belongs to. A feature
+    on the escalation chain advances through escalation_stages; reaching the end of
+    either chain returns None (end of pipeline -> merge)."""
+    for seq in (p.stages, p.escalation_stages):
+        if stage in seq:
+            i = seq.index(stage)
+            return seq[i + 1] if i + 1 < len(seq) else None
     return None
+
+
+def kickback_route(p: "Project", stage: str, state: dict) -> dict:
+    """Decide where a KICKED BACK feature goes, as pure logic (so it is testable).
+    Failures are counted per spot. Precedence:
+      - A main stage WITH an escalation route: route onto the escalation chain once
+        this spot has failed `threshold` times, else a normal kickback. The chain is
+        that stage's backstop, so the global budget does not pre-empt it.
+      - An escalation-chain stage: it gets its own fresh per-spot budget; once it
+        fails `max_kickbacks` times at one spot the feature is quarantined (the chain
+        did not save it).
+      - A plain stage (no escalation configured): the original global kickback budget
+        (max_kickbacks total) quarantines it, so plain pipelines behave exactly as
+        before.
+    Returns {action: 'escalate'|'quarantine'|'normal', target, spot, total, counts}."""
+    counts = {}
+    raw = state.get("kick_back_by_stage", "")
+    if raw:
+        try:
+            counts = json.loads(raw)
+        except (ValueError, TypeError):
+            counts = {}
+    counts[stage] = int(counts.get(stage, 0)) + 1
+    spot = counts[stage]
+    total = int(state.get("kick_back_count", "0") or "0") + 1
+    on_esc = stage in p.escalation_stages
+    esc = p.escalation.get(stage)
+    if esc and not on_esc:
+        if spot >= int(esc.get("threshold", p.max_kickbacks)):
+            return {"action": "escalate", "target": esc["target"], "spot": spot, "total": total, "counts": counts}
+        return {"action": "normal", "target": p.kickback.get(stage, p.stages[0]),
+                "spot": spot, "total": total, "counts": counts}
+    if on_esc:
+        if spot >= p.max_kickbacks:
+            return {"action": "quarantine", "target": None, "spot": spot, "total": total, "counts": counts}
+        return {"action": "normal", "target": p.kickback.get(stage, p.escalation_stages[0]),
+                "spot": spot, "total": total, "counts": counts}
+    if total >= p.max_kickbacks:
+        return {"action": "quarantine", "target": None, "spot": spot, "total": total, "counts": counts}
+    return {"action": "normal", "target": p.kickback.get(stage, p.stages[0]),
+            "spot": spot, "total": total, "counts": counts}
 
 
 def start_feature(p: "Project", item: dict):
@@ -894,24 +951,33 @@ def handle(p: "Project", state: dict, items: list):
         return
 
     if status in ("KICKED BACK", "KICKBACK"):
-        count = int(state.get("kick_back_count", "0") or "0") + 1
+        route = kickback_route(p, stage, state)
         kill_agent(p, stage)
-        if count >= p.max_kickbacks:
-            # Kickback budget spent: stop looping. Quarantine the feature and escalate
-            # to the operator with a triaged summary (the one-shot judgment step).
+        counts_json = json.dumps(route["counts"], separators=(",", ":"))
+        if route["action"] == "quarantine":
+            # Budget spent (or the escalation chain also kept failing): stop looping.
+            # Quarantine the feature and escalate to the operator with a triaged summary.
             mark_active_feature("QUARANTINED")
             escalate(p, f"Feature '{feature}' hit the kickback budget at {stage}",
-                     f"Kicked back {count} times (budget {p.max_kickbacks}); quarantined pending your call.")
+                     f"Kicked back {route['total']} times (budget {p.max_kickbacks}); "
+                     f"quarantined pending your call.")
             write_state(p, {"current_stage": "none", "stage_status": "BLOCKED",
                             "current_feature": "none", "current_feature_id": "",
-                            "kick_back_count": str(count), "waiting_for": "OPERATOR"})
+                            "kick_back_count": str(route["total"]),
+                            "kick_back_by_stage": counts_json, "waiting_for": "OPERATOR"})
             return
-        target = p.kickback.get(stage, p.stages[0])
-        note = f"Kicked back from {stage}. See the feedback in {p.docs}/dev-inbox/."
+        target = route["target"]
+        if route["action"] == "escalate":
+            note = (f"Escalated after {route['spot']} failures at {stage}. This is the "
+                    f"escalation chain; see the feedback in {p.docs}/dev-inbox/.")
+            log_msg = f"Escalated {stage} -> {target} (chain) for '{feature}'"
+        else:
+            note = f"Kicked back from {stage}. See the feedback in {p.docs}/dev-inbox/."
+            log_msg = f"Kicked back {stage} -> {target} (count {route['total']}) for '{feature}'"
         write_state(p, {"current_stage": target, "stage_status": "IN PROGRESS",
-                        "kick_back_count": str(count)})
+                        "kick_back_count": str(route["total"]), "kick_back_by_stage": counts_json})
         start_agent(p, target, feature, branch, note)
-        log(p, f"Kicked back {stage} -> {target} (count {count}) for '{feature}'")
+        log(p, log_msg)
         return
 
 

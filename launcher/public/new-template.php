@@ -54,6 +54,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if (!$nodes) $errors[] = 'Add at least one stage.';
 
+    // Optional escalation chain: a second run of agents a feature is routed onto after
+    // repeated same-spot failure on the main chain. Built from its own rows; sequential.
+    $escTypes = $_POST['esc_node_type'] ?? [];
+    $escIds   = $_POST['esc_node_id'] ?? [];
+    $escKick  = $_POST['esc_kickback'] ?? [];
+    $escHead = null; $escPrev = null;
+    foreach ($escTypes as $i => $typeId) {
+        $typeId = trim((string) $typeId);
+        if ($typeId === '' || !isset($types[$typeId])) continue;
+        $nid = deveryman_slug_id(trim((string) ($escIds[$i] ?? ''))) ?? ('esc-' . $typeId);
+        $node = ['id' => $nid, 'agent_type' => $typeId, 'chain' => 'escalation'];
+        $kt = deveryman_slug_id(trim((string) ($escKick[$i] ?? '')));
+        if ($kt !== null) {
+            $node['kickback'] = ['target' => $kt,
+                'doc' => $types[$typeId]['kickback_doc'] ?? ('dev-inbox/' . $nid . '-feedback.md')];
+        }
+        $nodes[] = $node;
+        if ($escHead === null) $escHead = $nid;
+        if ($escPrev !== null) $flow[] = ['from' => $escPrev, 'to' => $nid];
+        $escPrev = $nid;
+    }
+    // Wire the entry: every main stage that can kick back escalates to the chain head
+    // after `threshold` same-spot failures. (The form wires one shared chain; the
+    // template JSON / visual builder can target different chains per stage.)
+    $threshold = max(0, (int) ($_POST['esc_threshold'] ?? 0));
+    if ($escHead !== null && $threshold > 0) {
+        foreach ($nodes as &$n) {
+            if (($n['chain'] ?? 'main') === 'main' && !empty($n['kickback']['target'])) {
+                $n['kickback']['escalation_target'] = $escHead;
+                $n['kickback']['fail_threshold'] = $threshold;
+            }
+        }
+        unset($n);
+    }
+
     $conductor = ($_POST['conductor'] ?? '') === '1';
     $tpl = [
         'label' => $label,
@@ -103,15 +138,28 @@ if ($pre !== null && ($pre['source'] ?? '') === 'builtin') {
     $preIsBuiltin = false;
 }
 
-// Reconstruct ordered rows (agent_type + kickback target) from the template.
-$rows = [];
+// Reconstruct ordered rows for each chain (main + escalation) from the template.
+$rows = []; $escRows = []; $escThreshold = 0;
 if ($pre !== null) {
-    $order = deveryman_flow_order($pre['nodes'] ?? [], $pre['flow'] ?? []);
+    $flowAll = $pre['flow'] ?? [];
     $byId = [];
     foreach ($pre['nodes'] ?? [] as $n) $byId[$n['id'] ?? ''] = $n;
-    foreach ($order as $nid) {
+    $mainIds = []; $escIds = [];
+    foreach ($pre['nodes'] ?? [] as $n) {
+        $nid = $n['id'] ?? '';
+        if (($n['chain'] ?? 'main') === 'escalation') $escIds[$nid] = true; else $mainIds[$nid] = true;
+    }
+    $sub = fn(array $ids) => array_values(array_filter($flowAll, fn($e) => isset($ids[$e['from'] ?? ''], $ids[$e['to'] ?? ''])));
+    $mainNodes = array_intersect_key($byId, $mainIds);
+    $escNodes  = array_intersect_key($byId, $escIds);
+    foreach (deveryman_flow_order(array_values($mainNodes), $sub($mainIds)) as $nid) {
         $n = $byId[$nid] ?? null; if ($n === null) continue;
         $rows[] = ['type' => $n['agent_type'] ?? '', 'id' => $n['id'] ?? '', 'kick' => $n['kickback']['target'] ?? ''];
+        if (!empty($n['kickback']['fail_threshold'])) $escThreshold = (int) $n['kickback']['fail_threshold'];
+    }
+    foreach (deveryman_flow_order(array_values($escNodes), $sub($escIds)) as $nid) {
+        $n = $byId[$nid] ?? null; if ($n === null) continue;
+        $escRows[] = ['type' => $n['agent_type'] ?? '', 'id' => $n['id'] ?? '', 'kick' => $n['kickback']['target'] ?? ''];
     }
 }
 $b = $pre['branching'] ?? [];
@@ -148,6 +196,31 @@ for ($i = 0; $i < TEMPLATE_ROWS; $i++) {
     echo '</select> ';
     echo '<input type="text" name="node_id[' . $i . ']" value="' . fw_h((string) $curId) . '" placeholder="node id (optional)" style="width:27%"> ';
     echo '<input type="text" name="kickback[' . $i . ']" value="' . fw_h((string) $curKick) . '" placeholder="kickback to" style="width:27%">';
+    echo '</div>';
+}
+
+echo '<h2>Escalation chain (optional)</h2>';
+echo '<p class="meta">A second run of agents a feature is routed onto when it keeps failing at the '
+    . 'same spot, before it ever reaches you. Leave empty for none. Fill some slots and set the '
+    . 'threshold: any main stage that can kick back will route here after that many same-spot failures, '
+    . 'and only if the chain also fails does it escalate to you.</p>';
+$escThresholdVal = $escThreshold ?: '';
+echo '<label>Escalate to the chain after this many same-spot failures '
+    . '<input type="number" name="esc_threshold" min="0" value="' . fw_h((string) $escThresholdVal) . '" placeholder="0 = off"></label>';
+$escRowCount = 4;
+for ($i = 0; $i < $escRowCount; $i++) {
+    $curType = $escRows[$i]['type'] ?? '';
+    $curId   = $escRows[$i]['id'] ?? '';
+    $curKick = $escRows[$i]['kick'] ?? '';
+    echo '<div class="card" style="padding:8px">';
+    echo '<select name="esc_node_type[' . $i . ']" style="width:40%"><option value="">(empty)</option>';
+    foreach ($types as $tid => $t) {
+        $sel = ($tid === $curType) ? ' selected' : '';
+        echo '<option value="' . fw_h($tid) . '"' . $sel . '>' . fw_h(($t['label'] ?? $tid) . ' [' . ($t['kind'] ?? 'stage') . ']') . '</option>';
+    }
+    echo '</select> ';
+    echo '<input type="text" name="esc_node_id[' . $i . ']" value="' . fw_h((string) $curId) . '" placeholder="node id (optional)" style="width:27%"> ';
+    echo '<input type="text" name="esc_kickback[' . $i . ']" value="' . fw_h((string) $curKick) . '" placeholder="kickback to" style="width:27%">';
     echo '</div>';
 }
 

@@ -77,25 +77,28 @@ execution is deferred.
 
 ## Next block (emerging from review; not yet built)
 
-### 6. Escalation chains (reroute on repeated failure)
-Today a feature that exceeds its kickback budget (`max_kickbacks`, Safeguard 6) is
-quarantined and escalated to a human. The richer idea: a kickback can carry an
-**escalation route**, so when the same feature fails at the same spot too many
-times, instead of stopping it is routed onto a **second chain of agents in the same
-pipeline** (an "escalation chain": specialist/harder agents), and only if it also
-fails there does it escalate to a human. Visually: the main line runs along the
-bottom; after N failures a feature lifts onto an escalation line above it.
-- Model: extend a node's kickback with `{ escalation_target, fail_threshold }` (or a
-  named chain). The graph stays linear-with-kickbacks; escalation is another wired
-  route, not a DAG.
-- Underseer: on the Nth kickback at a node, route to `escalation_target` instead of
-  quarantining; keep quarantine as the final backstop if the escalation chain also
-  fails.
-- Editor/builder: draw the kickback line, then a branch off it carries the "if this
-  feature fails here twice, go to <escalation node>" criteria (the exclamation mark
-  sits on the kickback until its criteria are filled).
-- OPEN: build the model + underseer support now, or spec it and build alongside the
-  visual builder. (Asked.)
+### 6. Escalation chains (reroute on repeated failure) [BUILT]
+A kickback can carry an **escalation route**, so when a feature fails at the same
+spot too many times, instead of being quarantined it is routed onto a **second chain
+of agents in the same pipeline** (the escalation chain); only if it also fails there
+does it escalate to a human.
+- [x] Model: a node's kickback gained `{ escalation_target, fail_threshold }`, and a
+  node gained `chain: main | escalation`. Compile emits `escalation_stages` (the
+  chain, ordered) and `escalation` (`stage -> {target, threshold}`); both are omitted
+  when unused, so a plain pipeline compiles byte-identically. Still
+  linear-with-kickbacks, not a DAG.
+- [x] Underseer: per-spot kickback counting (`kick_back_by_stage` in state);
+  `kickback_route()` (pure, unit-tested) routes a stage onto its escalation chain
+  once its spot passes `threshold`; the escalation chain gets its own fresh per-spot
+  budget and quarantines only if it also keeps failing. `next_stage` advances within
+  whichever chain the feature is on; escalation stages are materialized and wiring-
+  validated. Plain pipelines behave exactly as before.
+- [x] Form editor: an "Escalation chain" section + a threshold; the form wires every
+  kickback-capable main stage to the chain head. The full per-node routing lives in
+  the template JSON for the visual builder to drive.
+- Builder (later): draw the kickback line, branch off it for "fails here N times ->
+  escalation node"; the exclamation mark sits on the kickback until its criteria are
+  filled.
 
 ### 7. Per-pipeline agent tweaks
 A predefined agent type pulled into a pipeline may need a small tweak for that one
