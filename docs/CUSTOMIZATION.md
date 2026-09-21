@@ -45,13 +45,18 @@ execution is deferred.
   `materialize_agent` prefers over the shared `dpa/agents` template.
 
 ### 3. User-created pipeline templates
-- [ ] Stepping stone: a form-based template editor (pick agent types, order them,
-  set kickback + branching) that saves a template.
-- [ ] Centerpiece (later): the visual node-graph builder. Agent cards with in/out
-  ports connected in sequence; a files lane below wiring output -> file -> reader.
-  Each connection carries a required artifact contract; an unconfigured connection
-  shows an exclamation mark and, below, "configure the output of A for B". Save
-  compiles the graph into the underseer config.
+- [x] Stepping stone: a form-based template editor (pick agent types, order them,
+  set kickback + branching) that saves a template. `launcher/public/new-template.php`
+  + the library `templates.php`. A saved template flows straight into new-project
+  and import (both read `deveryman_templates()`), and validates against the same
+  wiring checks the daemon runs. Form editor uses one node per agent type; the
+  visual builder lifts that.
+- [ ] Centerpiece (later, NOT in this pass): the visual node-graph builder. Agent
+  cards with in/out ports connected in sequence; a files lane below wiring
+  output -> file -> reader. Each connection carries a required artifact contract; an
+  unconfigured connection shows an exclamation mark and, below, "configure the
+  output of A for B". Save compiles the graph into the underseer config. THIS is the
+  agreed stop line for the current pass.
 
 ### 4. Import-repo wiring (this branch's namesake)
 - [x] Make import template-driven (like new-project): `import.php` now picks a
@@ -63,8 +68,11 @@ execution is deferred.
   is only cloned on final confirm. DPA standard no longer forces a fresh repo.
 
 ### 5. Underseer consumption
-- [ ] The underseer reads the generated config only; no new exposed knobs; it
-  honors the explicit per-agent I/O from step 1.
+- [x] The underseer reads the generated config only; no new exposed knobs. It
+  honors the explicit per-agent I/O (the compiled `io` map, delivered via the
+  read-only `pipeline-instructions.md` overlay) and sources a custom role from the
+  per-project `pipeline/roles/<node>/CLAUDE.md` override (a workspace file, not a
+  config field), falling back to the shared `dpa/agents` template for builtins.
 
 ## Decisions pinned
 - Linear-with-kickbacks (graph compiles to ordered stages + kickback); defer true
