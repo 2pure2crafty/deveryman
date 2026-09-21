@@ -133,11 +133,12 @@ function deveryman_unregister(string $path, string $slug): void {
  * PROJECT.md, the wrap-up skill, and a settings.json. Mirrors conductor's own
  * scaffold_new_agent shape. Returns true on success.
  */
-function deveryman_scaffold_conductor_agent(string $container, string $name, string $label): bool {
+function deveryman_scaffold_conductor_agent(string $container, string $name, string $label, ?string $templateName = null, string $instructions = ''): bool {
     $adir = $container . '/conductor/' . $name;
     if (!@mkdir($adir . '/.claude/skills/wrap-up', 0775, true) && !is_dir($adir)) return false;
-    $tmpl = __DIR__ . '/../conductor/agent-templates/' . $name . '/CLAUDE.md';
+    $tmpl = __DIR__ . '/../conductor/agent-templates/' . ($templateName ?? $name) . '/CLAUDE.md';
     $claude = is_file($tmpl) ? (string) file_get_contents($tmpl) : ('# ' . ucfirst($name) . " agent\n");
+    if (trim($instructions) !== '') $claude .= "\n## Initial task\n\n" . trim($instructions) . "\n";
     if (@file_put_contents($adir . '/CLAUDE.md', $claude) === false) return false;
     @file_put_contents($adir . '/PROJECT.md', "# Project: {$label}\n\nThis agent works on the {$label} project.\n");
     $skSrc = __DIR__ . '/../shared/memory-kit/skills/wrap-up/SKILL.md';
@@ -161,7 +162,7 @@ function deveryman_scaffold_conductor_agent(string $container, string $name, str
  * Returns ['ok'=>bool, 'errors'=>string[], 'warnings'=>string[]]. On any failure
  * the half-created container and any partial registration are rolled back.
  */
-function deveryman_apply_template(string $slug, string $label, string $templateId, bool $createRepo): array {
+function deveryman_apply_template(string $slug, string $label, string $templateId, bool $createRepo, bool $scaffoldConductor = true): array {
     $warnings = [];
     $tpl = deveryman_template($templateId);
     if ($tpl === null) return ['ok' => false, 'errors' => ["Unknown template: {$templateId}"], 'warnings' => []];
@@ -223,7 +224,8 @@ function deveryman_apply_template(string $slug, string $label, string $templateI
     }
 
     // 4. Conductor capability: scaffold agents + write the Conductor registry.
-    if ($tpl['conductor'] && !empty($tpl['conductor_agents'])) {
+    // Skipped when a graduating one-shot agent will be moved in as the agent.
+    if ($scaffoldConductor && $tpl['conductor'] && !empty($tpl['conductor_agents'])) {
         $prefix = fw_config_get('CONDUCTOR_TMUX_PREFIX', 'DEV');
         $agents = [];
         foreach ($tpl['conductor_agents'] as $an) {
@@ -345,4 +347,123 @@ function deveryman_latest_session_handoff(array $paths, int $lines = 40): array 
     if ($newest === null) return [];
     $head = array_slice(@file($newest, FILE_IGNORE_NEW_LINES) ?: [], 0, $lines);
     return ['path' => $newest, 'mtime' => $nmtime, 'peek' => implode("\n", $head)];
+}
+
+/* --- one-shot (project-less) agents + graduate ------------------------------ */
+
+/** Root dir for one-shot agents (a deveryman-owned bucket, not CONDUCTOR_BASE_DIR). */
+function deveryman_oneshot_root(): string {
+    return rtrim(fw_config_get('DEVERYMAN_PROJECTS_DIR', '/var/www/dpa-projects'), '/') . '/oneshot';
+}
+
+/** The reserved Conductor-registry slug that holds project-less agents. */
+function deveryman_oneshot_slug(): string {
+    return 'oneshot';
+}
+
+/** Recursive copy of a directory tree (used to carry an agent's memory over). */
+function deveryman_copy_dir(string $src, string $dst): void {
+    @mkdir($dst, 0775, true);
+    foreach (scandir($src) ?: [] as $f) {
+        if ($f === '.' || $f === '..') continue;
+        $s = $src . '/' . $f; $d = $dst . '/' . $f;
+        (is_dir($s) && !is_link($s)) ? deveryman_copy_dir($s, $d) : @copy($s, $d);
+    }
+}
+
+/**
+ * Create a one-shot (project-less) agent from an agent template: scaffold its
+ * workspace under the one-shot bucket (with the initial prompt baked into its
+ * CLAUDE.md as an initial task) and register it in conductor/registry.json under
+ * the reserved `oneshot` project. Returns ['ok'=>bool,'slug'=>string,'errors'=>[]].
+ * The caller spins it up.
+ */
+function deveryman_oneshot_create(string $label, string $template, string $model, string $instructions): array {
+    $slug = deveryman_slugify($label);
+    if ($slug === null) return ['ok' => false, 'slug' => '', 'errors' => ['Name did not produce a valid slug.']];
+    if (!is_file(__DIR__ . '/../conductor/agent-templates/' . $template . '/CLAUDE.md')) {
+        return ['ok' => false, 'slug' => '', 'errors' => ["Unknown agent template '{$template}'."]];
+    }
+    $root = deveryman_oneshot_root();
+    @mkdir($root, 0775, true);
+    $condReg = __DIR__ . '/../conductor/registry.json';
+    $os = deveryman_oneshot_slug();
+
+    $reg = is_file($condReg) ? (json_decode((string) @file_get_contents($condReg), true) ?: []) : [];
+    if (isset($reg['projects'][$os]['agents'][$slug])) {
+        return ['ok' => false, 'slug' => '', 'errors' => ["A one-shot agent '{$slug}' already exists."]];
+    }
+    if (!deveryman_scaffold_conductor_agent($root, $slug, $label, $template, $instructions)) {
+        return ['ok' => false, 'slug' => '', 'errors' => ['Could not scaffold the agent workspace.']];
+    }
+    $prefix = fw_config_get('CONDUCTOR_TMUX_PREFIX', 'DEV');
+    $ok = fw_update_json($condReg, function (array $r) use ($slug, $label, $template, $model, $prefix, $root, $os): array {
+        $r['projects'] ??= [];
+        $bucket = $r['projects'][$os] ?? ['label' => 'One-shot agents', 'repo' => null, 'description' => 'Project-less agents.', 'agents' => []];
+        $bucket['path'] = $root;
+        $bucket['agents'][$slug] = [
+            'label' => $label, 'path' => 'conductor/' . $slug,
+            'tmux' => $prefix . '-oneshot-' . $slug,
+            'model' => $model, 'permission_mode' => 'acceptEdits',
+            'auto_wrapdown' => false, 'template' => $template,
+        ];
+        $r['projects'][$os] = $bucket;
+        return $r;
+    });
+    if (!$ok) {
+        deveryman_rrmdir($root . '/conductor/' . $slug);
+        return ['ok' => false, 'slug' => '', 'errors' => ['Could not write the Conductor registry.']];
+    }
+    return ['ok' => true, 'slug' => $slug, 'errors' => []];
+}
+
+/**
+ * Graduate a one-shot agent into a new project: stand the project up from a
+ * template (WITHOUT a fresh conductor agent), move the one-shot agent in as the
+ * project's agent (carrying its SESSION.md + memory over), and remove it from the
+ * one-shot bucket. The caller must have wrapped the agent down first. Returns
+ * ['ok'=>bool,'errors'=>[],'warnings'=>[],'project'=>string].
+ */
+function deveryman_graduate(string $agentSlug, string $projLabel, string $templateId): array {
+    $condReg = __DIR__ . '/../conductor/registry.json';
+    $os = deveryman_oneshot_slug();
+    $reg = is_file($condReg) ? (json_decode((string) @file_get_contents($condReg), true) ?: []) : [];
+    $agent = $reg['projects'][$os]['agents'][$agentSlug] ?? null;
+    if ($agent === null) return ['ok' => false, 'errors' => ['No such one-shot agent.'], 'warnings' => [], 'project' => ''];
+    $projSlug = deveryman_slugify($projLabel);
+    if ($projSlug === null) return ['ok' => false, 'errors' => ['Project name did not produce a valid slug.'], 'warnings' => [], 'project' => ''];
+
+    // Stand up the project, skipping the template's own conductor-agent scaffold.
+    $res = deveryman_apply_template($projSlug, $projLabel, $templateId, false, false);
+    if (!$res['ok']) return ['ok' => false, 'errors' => $res['errors'], 'warnings' => $res['warnings'], 'project' => ''];
+
+    $root = rtrim(fw_config_get('DEVERYMAN_PROJECTS_DIR', '/var/www/dpa-projects'), '/');
+    $container = $root . '/' . $projSlug;
+    $newAgent = $agent['template'] ?? $agentSlug;   // an ideas one-shot becomes the project's 'ideas' agent
+
+    if (!deveryman_scaffold_conductor_agent($container, $newAgent, $projLabel, $newAgent)) {
+        deveryman_rollback_container($container, $root);
+        return ['ok' => false, 'errors' => ['Could not scaffold the graduated agent.'], 'warnings' => [], 'project' => ''];
+    }
+    $src = deveryman_oneshot_root() . '/conductor/' . $agentSlug;
+    $dst = $container . '/conductor/' . $newAgent;
+    if (is_file($src . '/SESSION.md')) @copy($src . '/SESSION.md', $dst . '/SESSION.md');
+    if (is_dir($src . '/memory')) deveryman_copy_dir($src . '/memory', $dst . '/memory');
+
+    $prefix = fw_config_get('CONDUCTOR_TMUX_PREFIX', 'DEV');
+    fw_update_json($condReg, function (array $r) use ($projSlug, $projLabel, $container, $newAgent, $agent, $prefix, $os, $agentSlug): array {
+        $r['projects'][$projSlug] = [
+            'label' => $projLabel, 'path' => $container, 'repo' => null, 'description' => $projLabel,
+            'agents' => [$newAgent => [
+                'label' => ucfirst($newAgent), 'path' => 'conductor/' . $newAgent,
+                'tmux' => $prefix . '-' . $projSlug . '-' . $newAgent,
+                'model' => $agent['model'] ?? 'sonnet', 'permission_mode' => $agent['permission_mode'] ?? 'acceptEdits',
+                'auto_wrapdown' => false,
+            ]],
+        ];
+        unset($r['projects'][$os]['agents'][$agentSlug]);
+        return $r;
+    });
+    deveryman_rrmdir($src);
+    return ['ok' => true, 'errors' => [], 'warnings' => $res['warnings'], 'project' => $projSlug];
 }

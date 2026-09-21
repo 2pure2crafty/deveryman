@@ -4,6 +4,8 @@ define('DEVERYMAN_APP', "D'everyman");
 define('DEVERYMAN_CONFIG', getenv('DEVERYMAN_CONFIG') ?: '/etc/default/conductor');
 require __DIR__ . '/../../shared/framework/framework.php';
 require __DIR__ . '/../../shared/framework/tokens.php';
+require_once __DIR__ . '/../lib.php';                 // oneshot helpers
+require_once __DIR__ . '/../../conductor/lib.php';    // load_registry, agent_status, status_badge
 fw_require_auth();
 
 $conductorUrl = fw_config_get('DEVERYMAN_CONDUCTOR_URL');
@@ -59,6 +61,17 @@ if (empty($projects)) {
         echo '<a class="btn" href="' . fw_h($href) . '">Open</a>';
         echo '</div>';
     }
+}
+
+// Conductor: one-shot agents, not tied to any project. Spin one up to think with,
+// then graduate it into a project when it earns its keep.
+echo '<h2>Conductor</h2>';
+echo '<p class="desc">One-shot agents, not tied to a project. Graduate one into a project when it is ready.</p>';
+echo '<a class="btn" href="new-agent.php">New agent</a>';
+$osAgents = load_registry()['projects'][deveryman_oneshot_slug()]['agents'] ?? [];
+foreach ($osAgents as $an => $ag) {
+    echo '<div class="card"><strong>' . fw_h($ag['label'] ?? $an) . '</strong> ' . status_badge(agent_status($ag['tmux'] ?? ''))
+        . '<a class="btn" style="background:#444" href="agent.php?slug=oneshot&agent=' . rawurlencode((string) $an) . '">Open</a></div>';
 }
 
 echo '<h2>Direct</h2>';

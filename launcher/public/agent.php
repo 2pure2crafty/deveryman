@@ -55,6 +55,10 @@ $act = function (string $action, string $label, string $bg) use ($slug, $agentSl
 echo $status === 'stopped'
     ? $act('spinup', 'Spin up', '#2563eb')
     : $act('wrapdown', 'Wrap up & stop', '#b91c1c');
+// One-shot agents can graduate into a project.
+if ($slug === 'oneshot') {
+    echo '<a class="btn" style="background:#7c3aed" href="graduate.php?agent=' . rawurlencode($agentSlug) . '">Graduate to project</a>';
+}
 
 // last session handoff (capped)
 $sm = $dir . '/SESSION.md';
