@@ -7,9 +7,11 @@ require_once __DIR__ . '/../lib.php';                 // launcher helpers (git/r
 require_once __DIR__ . '/../../conductor/lib.php';    // agent_status, agent_dir, agent_token_usage, fmt_tokens, status_badge, load_registry
 require_once __DIR__ . '/../../dpa/lib.php';          // dpa_config, dpa_docs_dir, dpa_read_doc, dpa_daemon_active, dpa_base_ahead, dpa_queue_counts
 fw_require_auth();
+fw_csrf_token(); // start session before any output
 
 $conductorUrl = fw_config_get('DEVERYMAN_CONDUCTOR_URL');
 $dpaUrl       = fw_config_get('DEVERYMAN_DPA_URL');
+$msg          = $_GET['msg'] ?? '';
 
 /* --- resolve the project across both registries --- */
 $slug = $_GET['slug'] ?? '';
@@ -36,6 +38,17 @@ $dpaRunning = !empty($caps['dpa']) ? dpa_daemon_active($slug) : false;
 
 fw_header($label, '/');
 echo '<h1>' . fw_h($label) . '</h1>';
+if ($msg !== '') echo '<div class="card"><strong>' . fw_h($msg) . '</strong></div>';
+
+// Inline DPA action form (CSRF), posting to project-action.php.
+$pform = function (string $action, string $label, string $bg, array $extra = []) use ($slug): string {
+    $h = '<form method="post" action="project-action.php" style="display:inline">'
+        . '<input type="hidden" name="project" value="' . fw_h($slug) . '">'
+        . '<input type="hidden" name="action" value="' . fw_h($action) . '">'
+        . fw_csrf_field();
+    foreach ($extra as $k => $v) $h .= '<input type="hidden" name="' . fw_h($k) . '" value="' . fw_h((string) $v) . '">';
+    return $h . '<button class="btn" type="submit" style="background:' . $bg . '">' . fw_h($label) . '</button></form>';
+};
 
 $summary = $dpaCfg['context']['project_summary'] ?? '';
 if ($summary === '' && $condProj) $summary = $condProj['description'] ?? '';
@@ -104,7 +117,6 @@ if ($dpaCfg) {
     $docs = dpa_docs_dir($dpaCfg);
     $counts = dpa_queue_counts($dpaCfg);
     $c = fn(string $k): int => (int) ($counts[$k] ?? 0);
-    $dpaLink = $dpaUrl !== '' ? rtrim($dpaUrl, '/') . '/index.php?project=' . rawurlencode($slug) : '';
 
     echo '<h2>Development Pipeline Automation</h2>';
     echo '<div class="card">';
@@ -114,11 +126,23 @@ if ($dpaCfg) {
     $sstatus = preg_match('/\*\*Stage status:\*\*\s*(.*)/', $state, $m) ? trim($m[1]) : 'IDLE';
     echo '<div class="meta">stage: ' . fw_h($stage) . ' (' . fw_h($sstatus) . '), autonomy '
         . fw_h((string) ($dpaCfg['autonomy_level'] ?? '')) . '</div>';
-    echo '<div class="meta">queue: ' . dpa_backlog_queued($dpaCfg) . ' backlog, ' . $c('QUEUED') . ' queued, '
+    $backlog = dpa_backlog_queued($dpaCfg);
+    echo '<div class="meta">queue: ' . $backlog . ' backlog, ' . $c('QUEUED') . ' queued, '
         . $c('ACTIVE') . ' active, ' . $c('COMPLETE') . ' complete'
         . ($c('BLOCKED') ? ', ' . $c('BLOCKED') . ' blocked' : '') . '</div>';
-    if ($dpaLink !== '') echo '<a class="btn" href="' . fw_h($dpaLink) . '">Launch Development Pipeline Automation</a>';
-    echo '</div>';
+    // Autonomy slider (writes the config + restarts the daemon so it takes effect).
+    $auto = (int) ($dpaCfg['autonomy_level'] ?? 3);
+    echo '<form method="post" action="project-action.php" style="margin-top:8px">'
+        . '<input type="hidden" name="project" value="' . fw_h($slug) . '">'
+        . '<input type="hidden" name="action" value="set-autonomy">' . fw_csrf_field()
+        . '<label>Autonomy: <input type="range" name="autonomy" min="1" max="5" value="' . $auto
+        . '" style="width:auto" oninput="this.nextElementSibling.value=this.value"> <output>' . $auto . '</output></label>'
+        . '<button class="btn" type="submit" style="margin-top:6px;background:#444">Set autonomy</button></form>';
+    echo '<div style="margin-top:8px">';
+    if ($dpaRunning) echo $pform('stop', 'Stop', '#b91c1c') . $pform('restart', 'Restart', '#444');
+    else echo $pform('start', 'Launch Development Pipeline Automation', '#2563eb');
+    if ($backlog > 0) echo $pform('run-product', 'Run product feeder (' . $backlog . ')', '#2563eb');
+    echo '</div></div>';
 
     $ahead = dpa_base_ahead($dpaCfg);
     $base = $dpaCfg['base_branch'] ?? 'staging';
@@ -127,8 +151,11 @@ if ($dpaCfg) {
     echo '<div class="card">';
     echo '<div class="meta">' . (int) $ahead . ' feature(s) on ' . fw_h($base) . ' ready to merge into '
         . fw_h($rel) . ' and ship.</div>';
-    if ($dpaLink !== '') echo '<a class="btn" style="background:#7c3aed" href="' . fw_h($dpaLink) . '">Promote / deploy / verify</a>';
-    echo '</div>';
+    echo '<div style="margin-top:8px">';
+    if ($ahead > 0) echo $pform('promote', 'Promote ' . $base . ' to ' . $rel, '#7c3aed');
+    echo $pform('deploy', 'Deploy to production', '#b45309');
+    echo $pform('verify', 'Verify production', '#444');
+    echo '</div></div>';
 }
 
 fw_footer();
