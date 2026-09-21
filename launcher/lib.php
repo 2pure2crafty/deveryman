@@ -218,6 +218,10 @@ function deveryman_apply_template(string $slug, string $label, string $templateI
         ], $tpl['dpa']);
         $configPath = $container . '/project.json';
         if (!fw_write_json_atomic($configPath, $projectJson)) { deveryman_rollback_container($container, $root); return ['ok' => false, 'errors' => ['could not write project.json'], 'warnings' => $warnings]; }
+        // Materialize any user-authored roles this template uses into the per-project
+        // roles/ override dir the daemon reads, BEFORE --instantiate copies them in.
+        $rawTpl = deveryman_pipeline_template($templateId);
+        if ($rawTpl !== null) deveryman_write_custom_roles($rawTpl, $container . '/pipeline');
         [$e, , $er] = fw_run_cmd(['python3', $underseer, $configPath, '--instantiate'], null, '', 120);
         if ($e !== 0) { deveryman_rollback_container($container, $root); return ['ok' => false, 'errors' => ['materialize (--instantiate) failed: ' . trim($er)], 'warnings' => $warnings]; }
         $caps['dpa'] = ['config' => $configPath];

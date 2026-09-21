@@ -29,6 +29,7 @@ echo '<a class="btn" href="new-project.php">New project</a>';
 echo '<a class="btn" style="background:#444" href="import.php">Import a repo</a>';
 echo '<a class="btn" style="background:#444" href="setup.php">AI credentials</a>';
 echo '<a class="btn" style="background:#444" href="system.php">System</a>';
+echo '<a class="btn" style="background:#444" href="agent-types.php">Agent types</a>';
 
 // Aggregate token view
 $tot = fw_total_tokens();

@@ -35,6 +35,28 @@ function deveryman_pipeline_templates_path(): string {
     return deveryman_registry_dir() . '/pipeline-templates.json';
 }
 
+/**
+ * Lowercase [a-z0-9-] id for a registry entry, or null if none is derivable.
+ * Named distinctly from lib.php's deveryman_slugify so registry.php can be required
+ * on its own (the two share logic but must not redeclare).
+ */
+function deveryman_slug_id(string $s): ?string {
+    $s = strtolower(trim($s));
+    $s = preg_replace('/[^a-z0-9]+/', '-', $s);
+    $s = trim($s, '-');
+    return ($s !== '' && preg_match('/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/', $s)) ? $s : null;
+}
+
+/** Split a textarea value into a trimmed, non-empty list (one item per line). */
+function deveryman_lines(string $s): array {
+    $out = [];
+    foreach (preg_split('/\r\n|\r|\n/', $s) as $line) {
+        $line = trim($line);
+        if ($line !== '') $out[] = $line;
+    }
+    return $out;
+}
+
 /* --- agent types ----------------------------------------------------------- */
 
 /**
@@ -283,6 +305,27 @@ function deveryman_save_pipeline_template(string $id, array $entry): bool {
         $reg['templates'][$id] = $entry;
         return $reg;
     });
+}
+
+/**
+ * Materialize any user-authored roles a template uses into a per-project override
+ * dir the daemon reads: <pipeline_root>/roles/<node-id>/CLAUDE.md. Builtin roles
+ * (role.ref) are skipped, since the daemon already has them under dpa/agents. Called
+ * by the applier before `--instantiate`. Returns the node ids that were written.
+ */
+function deveryman_write_custom_roles(array $pipelineTpl, string $pipelineRoot): array {
+    $agentTypes = deveryman_agent_types();
+    $written = [];
+    foreach ($pipelineTpl['nodes'] ?? [] as $node) {
+        $typeId = $node['agent_type'] ?? '';
+        $type = $agentTypes[$typeId] ?? null;
+        if ($type === null || !empty($type['role']['ref'])) continue;   // builtin ref: daemon has it
+        $id = $node['id'] ?? $typeId;
+        $dir = rtrim($pipelineRoot, '/') . '/roles/' . $id;
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true)) continue;
+        if (@file_put_contents($dir . '/CLAUDE.md', deveryman_render_role($type)) !== false) $written[] = $id;
+    }
+    return $written;
 }
 
 /* --- resolving + compiling ------------------------------------------------- */

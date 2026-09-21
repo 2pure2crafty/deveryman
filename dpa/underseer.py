@@ -124,8 +124,15 @@ def materialize_agent(p: "Project", name: str):
     wrap-up skill + settings) from the generic template for `name`."""
     adir = p.agent_dir(name)
     adir.mkdir(parents=True, exist_ok=True)
+    # A custom agent type ships its role as a per-project override under
+    # <pipeline_root>/roles/<name>/CLAUDE.md (written by the template applier).
+    # Prefer it over the shared template so a user-authored role never collides
+    # with the global one; builtins keep using AGENT_TEMPLATES.
+    override = p.root / "roles" / name / "CLAUDE.md"
     tmpl = AGENT_TEMPLATES / name / "CLAUDE.md"
-    if tmpl.exists():
+    if override.exists():
+        shutil.copyfile(override, adir / "CLAUDE.md")
+    elif tmpl.exists():
         shutil.copyfile(tmpl, adir / "CLAUDE.md")
     else:
         (adir / "CLAUDE.md").write_text(f"# {name.title()} agent\n\n(Generic template missing.)\n")

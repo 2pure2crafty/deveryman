@@ -36,9 +36,13 @@ execution is deferred.
   template down to the project.json the daemon runs).
 
 ### 2. Custom agents (agent-type editor)
-- [ ] Save an agent as a reusable type (e.g. an accessibility agent): its role,
-  its input, its output, its done-signal.
-- [ ] A browsable agent-type library the builder and new-agent pick from.
+- [x] Save an agent as a reusable type (e.g. an accessibility agent): its role
+  (summary/do/do-not/free-form), its inputs, its outputs, its done-signal, an
+  optional kickback. Form: `launcher/public/new-agent-type.php`.
+- [x] A browsable agent-type library the builder and new-agent pick from:
+  `launcher/public/agent-types.php`. A user type materializes its role into a
+  per-project `pipeline/roles/<node>/CLAUDE.md` override that the daemon's
+  `materialize_agent` prefers over the shared `dpa/agents` template.
 
 ### 3. User-created pipeline templates
 - [ ] Stepping stone: a form-based template editor (pick agent types, order them,
