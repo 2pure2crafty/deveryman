@@ -541,6 +541,9 @@ function deveryman_compile_template(array $tpl): ?array {
     if ($escalation) $out['escalation'] = $escalation;
     if ($mergeStages) $out['merge_stages'] = $mergeStages;
     if ($emitFlow) $out['flow'] = $flowOut;
+    // The tagger stage the daemon hands the tag menu to (only meaningful when the
+    // pipeline actually routes on tags).
+    if ($hasGuard && !empty($tpl['tag_stage'])) $out['tag_stage'] = $tpl['tag_stage'];
     return $out;
 }
 
@@ -609,5 +612,24 @@ function deveryman_validate_template(array $tpl): array {
     };
     $walk(deveryman_flow_order(array_values($mainNodes), $subFlow($mainNodes)));
     $walk(deveryman_flow_order(array_values($escNodes), $subFlow($escNodes)));
+
+    // Tag-routing protection: if any edge guards on a tag (the pipeline forks), it
+    // must name a tagger stage that sets the tag, and every guard tag must be in the
+    // controlled vocabulary. This is the design-time half of "is this tag set
+    // somewhere"; at run time an unrouted feature escalates.
+    $guardTags = [];
+    foreach ($flow as $e) if (!empty($e['when']['tag'])) $guardTags[$e['when']['tag']] = true;
+    if ($guardTags) {
+        $tagStage = $tpl['tag_stage'] ?? '';
+        if ($tagStage === '') {
+            $problems[] = 'This pipeline routes on tags but no tagger stage is set to assign them.';
+        } elseif (!isset($ids[$tagStage])) {
+            $problems[] = "The tagger stage '{$tagStage}' is not a node in this pipeline.";
+        }
+        $known = deveryman_tags();
+        foreach (array_keys($guardTags) as $t) {
+            if (!isset($known[$t])) $problems[] = "Route guards on tag '{$t}', which is not in the tag vocabulary.";
+        }
+    }
     return $problems;
 }

@@ -93,6 +93,9 @@ class Project:
         # branch into base. When present, they own the merge (the implicit end-merge is
         # disabled); when absent, the pipeline still auto-merges at its end as before.
         self.merge_stages = self.cfg.get("merge_stages", []) or []
+        # The tagger stage: the one the daemon hands the tag menu to (via its overlay)
+        # and that sets the feature's routing tag. Empty for a non-branching pipeline.
+        self.tag_stage = self.cfg.get("tag_stage", "") or ""
 
     # derived paths
     @property
@@ -606,6 +609,15 @@ def write_pipeline_instructions(p: "Project", stage: str, feature: str):
     extra = (p.io.get(stage, {}).get("instructions") or "").strip()
     if extra:
         lines += ["", "## Extra instructions (this pipeline)", extra]
+    # The tagger stage is handed the controlled tag menu authoritatively: it must
+    # classify this work order and set exactly one of these tags in the build-queue
+    # Tag column, so the pipeline can route the feature. Off-menu tags do not route.
+    if stage == p.tag_stage and allowed_tags(p):
+        menu = ", ".join(f"`{t}`" for t in allowed_tags(p))
+        lines += ["", "## Set the feature tag (routing)",
+                  f"This pipeline forks by tag. Classify this work order and set its tag to EXACTLY",
+                  f"one of: {menu}.",
+                  f"Write it in the Tag column of this feature's row in build-queue.md."]
     lines += ["", f"Stay inside this project: only read or write under {p.repo} and {p.root}."]
     overlay.write_text("\n".join(lines) + "\n")
 
@@ -778,6 +790,18 @@ def stage_outgoing(p: "Project", stage: str) -> bool:
     return bool(p.flow) and any(e.get("from") == stage for e in p.flow)
 
 
+def allowed_tags(p: "Project") -> list:
+    """The controlled set of tags this pipeline routes on: the distinct guard tags on
+    its flow edges. The tagger stage is told to pick one of these (via its overlay),
+    and a written tag outside this set simply matches no route (default or escalate)."""
+    seen = []
+    for e in p.flow:
+        t = (e.get("when") or {}).get("tag")
+        if t and t not in seen:
+            seen.append(t)
+    return seen
+
+
 def kickback_route(p: "Project", stage: str, state: dict) -> dict:
     """Decide where a KICKED BACK feature goes, as pure logic (so it is testable).
     Failures are counted per spot. Precedence:
@@ -878,6 +902,14 @@ def handle(p: "Project", state: dict, items: list):
     feature = state.get("current_feature", "none")
     feature_id = state.get("current_feature_id", "")
     branch  = state.get("current_branch", "none")
+
+    # The routing tag is authoritative on the build-queue row: refresh it from there
+    # each cycle, so it reflects whatever the tagger (product agent, an early stage, or
+    # a human) wrote, whenever they wrote it. next_stage reads state['current_tag'].
+    if feature_id:
+        row = next((i for i in items if i.get("id") == feature_id), None)
+        if row is not None:
+            state["current_tag"] = row.get("tag", "")
 
     def mark_active_feature(new_status: str):
         """Update the queue row for the feature currently in progress. Prefer the
