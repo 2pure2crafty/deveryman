@@ -58,6 +58,10 @@ class Project:
         self.poll     = int(self.cfg.get("poll_interval", 30))
         self.stages   = self.cfg["stages"]
         self.kickback = self.cfg.get("kickback_target", {})
+        # Safeguard 6: per-feature kickback budget. Once a feature is kicked back this
+        # many times it is quarantined and escalated, so a custom graph cannot loop
+        # (e.g. dev <-> reviewer) forever.
+        self.max_kickbacks = max(1, int(self.cfg.get("max_kickbacks", 2)))
         self.context  = self.cfg.get("context", {})
         # Front feeder: rough ideas land here; the product agent turns QUEUED rows
         # into build-queue features. Human-initiated (or auto only at top autonomy).
@@ -506,6 +510,17 @@ def validate_wiring(p: "Project") -> list:
             problems.append(f"'{stage}' reads '{r}' which no earlier stage writes")
         for w in io.get("writes", []):
             produced.add(w)
+    # Safeguard 7: every wiring path must stay inside the project's docs dir. A
+    # declared read/write that escapes (via .. or an absolute path) is rejected, so
+    # one project can never be wired to read or write another's files.
+    docs_real = p.docs.resolve()
+    for stage in p.stages:
+        io = p.io.get(stage, {})
+        for kind in ("reads", "writes"):
+            for pth in io.get(kind, []):
+                full = (p.docs / str(pth).replace("<slug>", "x")).resolve()
+                if full != docs_real and docs_real not in full.parents:
+                    problems.append(f"'{stage}' {kind[:-1]} path '{pth}' escapes the project directory")
     return problems
 
 
@@ -519,6 +534,13 @@ def missing_inputs(p: "Project", stage: str, feature: str) -> list:
     """Safeguard 3: declared input files this stage needs that do not exist yet."""
     reads, _ = stage_io(p, stage, feature)
     return [r for r in reads if not r.exists()]
+
+
+def pipeline_busy(state: dict) -> bool:
+    """Safeguard 5: True if a feature is mid-flight, so a re-bake (config save) must
+    wait. The save flow calls this and refuses to reconfigure a busy pipeline; the
+    running feature also carries the pipeline version it started under."""
+    return state.get("stage_status", "IDLE").upper() not in ("IDLE", "")
 
 
 def write_pipeline_instructions(p: "Project", stage: str, feature: str):
@@ -715,6 +737,7 @@ def start_feature(p: "Project", item: dict):
         "current_stage": first, "stage_status": "IN PROGRESS",
         "current_feature": feature, "current_feature_id": item["id"],
         "current_branch": branch,
+        "current_pipeline_version": p.pipeline_version,
         "kick_back_count": "0", "waiting_for": "none",
     })
     log(p, f"Starting feature '{feature}' (id {item['id']}) at stage {first} on branch {branch} (from {p.base_branch})")
@@ -761,6 +784,14 @@ def handle(p: "Project", state: dict, items: list):
             fid = active[0]["id"] if active else None
         if fid:
             update_queue_status(p, fid, new_status)
+
+    # Safeguard 5: if the config was re-baked to a new pipeline_version while this
+    # feature is mid-flight, warn. The feature keeps its own wiring; do not re-bake
+    # a busy pipeline (the save flow enforces this via pipeline_busy()).
+    ver = state.get("current_pipeline_version", "")
+    if ver and ver != p.pipeline_version and stage not in ("none", "product"):
+        signal(p, f"pipeline_version is now {p.pipeline_version} but feature '{feature}' "
+                  f"started on version {ver}; avoid re-baking while work is in flight.")
 
     if status in ("IDLE", "") or stage == "none":
         # Safeguard 2: never start work on a mis-wired pipeline. Signal and hold.
@@ -858,12 +889,12 @@ def handle(p: "Project", state: dict, items: list):
     if status in ("KICKED BACK", "KICKBACK"):
         count = int(state.get("kick_back_count", "0") or "0") + 1
         kill_agent(p, stage)
-        if count >= 2:
-            # Double kick-back: stop looping. Quarantine the feature and escalate
-            # to Patch with a triaged summary (the one-shot judgment step).
+        if count >= p.max_kickbacks:
+            # Kickback budget spent: stop looping. Quarantine the feature and escalate
+            # to the operator with a triaged summary (the one-shot judgment step).
             mark_active_feature("QUARANTINED")
-            escalate(p, f"Feature '{feature}' double kicked-back at {stage}",
-                     f"Kicked back {count} times; quarantined pending your call.")
+            escalate(p, f"Feature '{feature}' hit the kickback budget at {stage}",
+                     f"Kicked back {count} times (budget {p.max_kickbacks}); quarantined pending your call.")
             write_state(p, {"current_stage": "none", "stage_status": "BLOCKED",
                             "current_feature": "none", "current_feature_id": "",
                             "kick_back_count": str(count), "waiting_for": "OPERATOR"})
