@@ -20,7 +20,7 @@ if (is_file($projectsPath)) {
 
 fw_header('Home');
 echo "<h1>D'everyman</h1>";
-echo '<p class="desc">Your projects, through either lens: Conductor (manual agents) or DPA (the pipeline).</p>';
+echo '<p class="desc">Your projects. Open one to drive its agents (Conductor) or run its pipeline (DPA).</p>';
 $msg = $_GET['msg'] ?? '';
 if ($msg !== '') echo '<div class="card"><strong>' . fw_h($msg) . '</strong></div>';
 echo '<a class="btn" href="new-project.php">New project</a>';
@@ -45,6 +45,7 @@ if (empty($projects)) {
 } else {
     foreach ($projects as $slug => $p) {
         $caps = $p['capabilities'] ?? [];
+        $href = 'project.php?slug=' . rawurlencode($slug);
         echo '<div class="card"><strong>' . fw_h($p['label'] ?? $slug) . '</strong>';
         // Capability chips + live DPA daemon status at a glance.
         if (!empty($caps['conductor'])) echo '<span class="pill on">Conductor</span>';
@@ -54,14 +55,8 @@ if (empty($projects)) {
             echo '<span class="pill ' . ($running ? 'on' : 'off') . '">DPA ' . ($running ? 'running' : 'idle') . '</span>';
         }
         if (!empty($p['path'])) echo '<div class="meta">' . fw_h($p['path']) . '</div>';
-        // Conductor lens (only if the project offers it).
-        if (!empty($caps['conductor']) && $conductorUrl !== '') {
-            echo '<a class="btn" href="' . fw_h(rtrim($conductorUrl, '/') . '/project.php?slug=' . rawurlencode($slug)) . '">Conductor</a>';
-        }
-        // DPA lens (only if the project offers it) -> that project's DPA view.
-        if (!empty($caps['dpa']) && $dpaUrl !== '') {
-            echo '<a class="btn" style="background:#444" href="' . fw_h(rtrim($dpaUrl, '/') . '/index.php?project=' . rawurlencode($slug)) . '">DPA</a>';
-        }
+        // Project-first: one link into the project hub (it offers both lenses).
+        echo '<a class="btn" href="' . fw_h($href) . '">Open</a>';
         echo '</div>';
     }
 }

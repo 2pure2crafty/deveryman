@@ -7,9 +7,11 @@ declare(strict_types=1);
  * pipeline_root), so the dashboard reads that project's own .pipeline/docs.
  */
 
-define('DEVERYMAN_APP', 'DPA');
-define('DEVERYMAN_CONFIG', getenv('DEVERYMAN_CONFIG') ?: '/etc/default/conductor');
-require __DIR__ . '/../shared/framework/framework.php';
+// Guard both so this lib can be required alongside conductor/lib.php from the
+// launcher (project-first hub) without a fatal re-declare or an app-name clash.
+if (!defined('DEVERYMAN_APP'))    define('DEVERYMAN_APP', 'DPA');
+if (!defined('DEVERYMAN_CONFIG')) define('DEVERYMAN_CONFIG', getenv('DEVERYMAN_CONFIG') ?: '/etc/default/conductor');
+require_once __DIR__ . '/../shared/framework/framework.php';
 
 function dpa_projects_json(): string {
     return __DIR__ . '/../projects.json';
@@ -48,6 +50,23 @@ function dpa_docs_dir(array $cfg): string {
 function dpa_read_doc(string $docs, string $name): string {
     $f = $docs . '/' . $name;
     return is_file($f) ? (string) file_get_contents($f) : '';
+}
+
+/** Count build-queue rows by status (QUEUED / ACTIVE / COMPLETE / BLOCKED / ...). */
+function dpa_queue_counts(array $cfg): array {
+    $f = dpa_docs_dir($cfg) . '/build-queue.md';
+    $counts = [];
+    if (!is_file($f)) return $counts;
+    foreach (@file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
+        $line = trim($line);
+        if ($line === '' || $line[0] !== '|') continue;
+        $cells = array_map('trim', explode('|', trim($line, '|')));
+        if (count($cells) < 4) continue;
+        if (strtolower($cells[0]) === 'id' || preg_match('/^-+$/', $cells[0])) continue;
+        $status = strtoupper($cells[2]);
+        $counts[$status] = ($counts[$status] ?? 0) + 1;
+    }
+    return $counts;
 }
 
 /** Recent lines of a project's underseer log. */

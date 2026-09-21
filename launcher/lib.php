@@ -260,3 +260,89 @@ function deveryman_apply_template(string $slug, string $label, string $templateI
 
     return ['ok' => true, 'errors' => [], 'warnings' => $warnings];
 }
+
+/* --- project hub: git status, repo resolution, session-handoff peek --------- */
+/* All read-only, built on fw_run_cmd (argv, no shell). Never throw; benign empty
+ * values on a non-repo / missing dir / no upstream. */
+
+/** True if $repo is a directory that looks like a git work tree. */
+function deveryman_is_repo(string $repo): bool {
+    if ($repo === '' || !is_dir($repo)) return false;
+    [$e, $out] = fw_run_cmd(['git', '-C', $repo, 'rev-parse', '--is-inside-work-tree']);
+    return $e === 0 && trim($out) === 'true';
+}
+
+/** Current branch name, or '' . */
+function deveryman_git_branch(string $repo): string {
+    if (!deveryman_is_repo($repo)) return '';
+    [$e, $out] = fw_run_cmd(['git', '-C', $repo, 'rev-parse', '--abbrev-ref', 'HEAD']);
+    return $e === 0 ? trim($out) : '';
+}
+
+/** ['upstream'=>bool,'ahead'=>int,'behind'=>int] vs the tracking branch. */
+function deveryman_git_ahead_behind(string $repo): array {
+    $out = ['upstream' => false, 'ahead' => 0, 'behind' => 0];
+    if (!deveryman_is_repo($repo)) return $out;
+    [$e] = fw_run_cmd(['git', '-C', $repo, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
+    if ($e !== 0) return $out;
+    $out['upstream'] = true;
+    [$ea, $a] = fw_run_cmd(['git', '-C', $repo, 'rev-list', '--count', '@{u}..HEAD']);
+    [$eb, $b] = fw_run_cmd(['git', '-C', $repo, 'rev-list', '--count', 'HEAD..@{u}']);
+    if ($ea === 0) $out['ahead'] = (int) trim($a);
+    if ($eb === 0) $out['behind'] = (int) trim($b);
+    return $out;
+}
+
+/** ['hash','subject','when','author'] for the last commit, or []. */
+function deveryman_git_last_commit(string $repo): array {
+    if (!deveryman_is_repo($repo)) return [];
+    [$e, $out] = fw_run_cmd(['git', '-C', $repo, 'log', '-1', '--format=%h%x1f%s%x1f%cr%x1f%an']);
+    if ($e !== 0 || trim($out) === '') return [];
+    $p = explode("\x1f", trim($out));
+    return ['hash' => $p[0] ?? '', 'subject' => $p[1] ?? '', 'when' => $p[2] ?? '', 'author' => $p[3] ?? ''];
+}
+
+/** origin remote URL, or '' . */
+function deveryman_git_remote_url(string $repo): string {
+    if (!deveryman_is_repo($repo)) return '';
+    [$e, $out] = fw_run_cmd(['git', '-C', $repo, 'remote', 'get-url', 'origin']);
+    return $e === 0 ? trim($out) : '';
+}
+
+/**
+ * Resolve a project's repo working tree: DPA repo_root, else the Conductor
+ * registry path, else the shared projects.json path, else ''.
+ */
+function deveryman_repo_root(string $slug, array $sharedProj, ?array $dpaCfg, ?array $condProj): string {
+    if ($dpaCfg && !empty($dpaCfg['repo_root'])) return (string) $dpaCfg['repo_root'];
+    if ($condProj && !empty($condProj['path'])) return (string) $condProj['path'];
+    return (string) ($sharedProj['path'] ?? '');
+}
+
+/** A clickable https GitHub URL: explicit `repo` field first, else the git remote, normalized. */
+function deveryman_github_url(string $repo, ?array $dpaCfg, ?array $condProj): string {
+    $url = '';
+    if ($condProj && !empty($condProj['repo'])) $url = (string) $condProj['repo'];
+    elseif ($dpaCfg && !empty($dpaCfg['repo_url'])) $url = (string) $dpaCfg['repo_url'];
+    else $url = deveryman_git_remote_url($repo);
+    if ($url === '') return '';
+    // Normalize git@github.com:owner/name(.git) -> https://github.com/owner/name
+    if (preg_match('#^git@([^:]+):(.+?)(?:\.git)?$#', $url, $m)) return 'https://' . $m[1] . '/' . $m[2];
+    return preg_replace('#\.git$#', '', $url);
+}
+
+/**
+ * Newest SESSION.md among the given candidate paths, with a peek of its first N
+ * lines. Returns ['path','mtime','peek'] or [].
+ */
+function deveryman_latest_session_handoff(array $paths, int $lines = 40): array {
+    $newest = null; $nmtime = -1;
+    foreach ($paths as $p) {
+        if (!is_file($p)) continue;
+        $mt = filemtime($p);
+        if ($mt !== false && $mt > $nmtime) { $nmtime = $mt; $newest = $p; }
+    }
+    if ($newest === null) return [];
+    $head = array_slice(@file($newest, FILE_IGNORE_NEW_LINES) ?: [], 0, $lines);
+    return ['path' => $newest, 'mtime' => $nmtime, 'peek' => implode("\n", $head)];
+}
