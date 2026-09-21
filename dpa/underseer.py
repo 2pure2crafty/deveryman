@@ -515,6 +515,12 @@ def missing_outputs(p: "Project", stage: str, feature: str) -> list:
     return [w for w in writes if not w.exists()]
 
 
+def missing_inputs(p: "Project", stage: str, feature: str) -> list:
+    """Safeguard 3: declared input files this stage needs that do not exist yet."""
+    reads, _ = stage_io(p, stage, feature)
+    return [r for r in reads if not r.exists()]
+
+
 def write_pipeline_instructions(p: "Project", stage: str, feature: str):
     """Write the authoritative, read-only pipeline overlay into the agent's dir. It
     binds this stage's inputs/outputs/done-signal for this run and OVERRIDES any
@@ -830,6 +836,16 @@ def handle(p: "Project", state: dict, items: list):
                 log(p, f"Feature '{feature}' merge {status_m}: {msg}")
             return
         if p.autonomy >= 3:
+            # Safeguard 3: do not advance into a stage whose declared inputs are
+            # missing (e.g. the producer's file was deleted or never landed).
+            miss_in = missing_inputs(p, nxt, feature)
+            if miss_in:
+                mark_active_feature("BLOCKED")
+                escalate(p, f"Cannot start '{nxt}': a required input is missing",
+                         ", ".join(str(m) for m in miss_in))
+                write_state(p, {"stage_status": "BLOCKED", "waiting_for": "OPERATOR"})
+                log(p, f"Pre-condition failed for {nxt}: missing {[str(m) for m in miss_in]}")
+                return
             kill_agent(p, stage)
             write_state(p, {"current_stage": nxt, "stage_status": "IN PROGRESS"})
             start_agent(p, nxt, feature, branch)
