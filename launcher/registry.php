@@ -69,12 +69,16 @@ function deveryman_lines(string $s): array {
  *   reads        string[] docs-relative input files (<slug> = the feature slug)
  *   writes       string[] docs-relative output files (an agent may have several)
  *   done_signal  how the agent tells the underseer it finished
- *   kickback     { target, doc } | null  (a default; a template node may override)
+ *   kickback_doc the feedback file this agent writes WHEN it kicks back, or null.
+ *                This is the agent's nature (a reviewer/tester produces feedback);
+ *                WHERE that kickback routes is not a type default, it is wired per
+ *                pipeline on the template node (kickback.target). Nothing kicks back
+ *                until a template wires it.
  *   source       "builtin" | "user"
  *
  * These reproduce the DPA-standard I/O that launcher/templates.php used to hardcode.
- * Only the kickbacks that DPA standard actually wires are set (all to `dev`);
- * features/acceptance/dev carry no kickback, matching the live kickback_target.
+ * The review/test types declare the doc they leave; the DPA-standard template wires
+ * their targets (all to `dev`).
  */
 function deveryman_agent_type_seed(): array {
     $sig = 'set the pipeline-state Stage status to COMPLETE';
@@ -83,61 +87,57 @@ function deveryman_agent_type_seed(): array {
             'label' => 'Product', 'kind' => 'feeder', 'role' => ['ref' => 'dpa/product'],
             'reads' => ['product-backlog.md'], 'writes' => ['build-queue.md'],
             'done_signal' => 'build-queue rows written; backlog rows marked PROCESSED',
-            'kickback' => null, 'source' => 'builtin',
+            'kickback_doc' => null, 'source' => 'builtin',
         ],
         'features' => [
             'label' => 'Features', 'kind' => 'stage', 'role' => ['ref' => 'dpa/features'],
             'reads' => [], 'writes' => ['dev-inbox/build-phase.md'],
-            'done_signal' => $sig, 'kickback' => null, 'source' => 'builtin',
+            'done_signal' => $sig, 'kickback_doc' => null, 'source' => 'builtin',
         ],
         'acceptance' => [
             'label' => 'Acceptance', 'kind' => 'stage', 'role' => ['ref' => 'dpa/acceptance'],
             'reads' => ['dev-inbox/build-phase.md'], 'writes' => ['acceptance/<slug>-criteria.md'],
-            'done_signal' => $sig, 'kickback' => null, 'source' => 'builtin',
+            'done_signal' => $sig, 'kickback_doc' => null, 'source' => 'builtin',
         ],
         'dev' => [
             'label' => 'Dev', 'kind' => 'stage', 'role' => ['ref' => 'dpa/dev'],
             'reads' => ['dev-inbox/build-phase.md'], 'writes' => [],
-            'done_signal' => $sig, 'kickback' => null, 'source' => 'builtin',
+            'done_signal' => $sig, 'kickback_doc' => null, 'source' => 'builtin',
         ],
         'testing-staging' => [
             'label' => 'Testing (staging)', 'kind' => 'stage', 'role' => ['ref' => 'dpa/testing-staging'],
             'reads' => ['acceptance/<slug>-criteria.md', 'dev-inbox/build-phase.md'], 'writes' => [],
-            'done_signal' => $sig,
-            'kickback' => ['target' => 'dev', 'doc' => 'dev-inbox/acceptance-fixes.md'], 'source' => 'builtin',
+            'done_signal' => $sig, 'kickback_doc' => 'dev-inbox/acceptance-fixes.md', 'source' => 'builtin',
         ],
         'integration-testing' => [
             'label' => 'Integration testing', 'kind' => 'stage', 'role' => ['ref' => 'dpa/integration-testing'],
             'reads' => ['dev-inbox/build-phase.md'], 'writes' => [],
-            'done_signal' => $sig,
-            'kickback' => ['target' => 'dev', 'doc' => 'dev-inbox/integration-fixes.md'], 'source' => 'builtin',
+            'done_signal' => $sig, 'kickback_doc' => 'dev-inbox/integration-fixes.md', 'source' => 'builtin',
         ],
         'reviewer' => [
             'label' => 'Reviewer', 'kind' => 'stage', 'role' => ['ref' => 'dpa/reviewer'],
             'reads' => ['dev-inbox/build-phase.md'], 'writes' => [],
-            'done_signal' => $sig,
-            'kickback' => ['target' => 'dev', 'doc' => 'dev-inbox/reviewer-feedback.md'], 'source' => 'builtin',
+            'done_signal' => $sig, 'kickback_doc' => 'dev-inbox/reviewer-feedback.md', 'source' => 'builtin',
         ],
         'ux-ui' => [
             'label' => 'UX/UI', 'kind' => 'stage', 'role' => ['ref' => 'dpa/ux-ui'],
             'reads' => ['dev-inbox/build-phase.md'], 'writes' => [],
-            'done_signal' => $sig,
-            'kickback' => ['target' => 'dev', 'doc' => 'dev-inbox/ux-fixes.md'], 'source' => 'builtin',
+            'done_signal' => $sig, 'kickback_doc' => 'dev-inbox/ux-fixes.md', 'source' => 'builtin',
         ],
         'deploy' => [
             'label' => 'Deploy', 'kind' => 'gate', 'role' => ['ref' => 'dpa/deploy'],
             'reads' => ['dev-inbox/deployment-note.md'], 'writes' => ['deploy-log/report.md'],
-            'done_signal' => 'deploy report written', 'kickback' => null, 'source' => 'builtin',
+            'done_signal' => 'deploy report written', 'kickback_doc' => null, 'source' => 'builtin',
         ],
         'testing-live' => [
             'label' => 'Testing (live)', 'kind' => 'gate', 'role' => ['ref' => 'dpa/testing-live'],
             'reads' => ['dev-inbox/deployment-note.md'], 'writes' => ['deploy-log/verify.md'],
-            'done_signal' => 'verification report written', 'kickback' => null, 'source' => 'builtin',
+            'done_signal' => 'verification report written', 'kickback_doc' => null, 'source' => 'builtin',
         ],
         'ideas' => [
             'label' => 'Ideas (brainstorming)', 'kind' => 'conductor', 'role' => ['ref' => 'conductor/ideas'],
             'reads' => [], 'writes' => [],
-            'done_signal' => 'human-run; no automated done-signal', 'kickback' => null, 'source' => 'builtin',
+            'done_signal' => 'human-run; no automated done-signal', 'kickback_doc' => null, 'source' => 'builtin',
         ],
     ];
 }
@@ -207,10 +207,9 @@ function deveryman_render_role(array $type): string {
     $out .= '- **Reads:** ' . ($reads ? implode(', ', $reads) : 'none (see pipeline-instructions.md)') . "\n";
     $out .= '- **Writes:** ' . ($writes ? implode(', ', $writes) : 'none (see pipeline-instructions.md)') . "\n";
     if (!empty($type['done_signal'])) $out .= '- **Done signal:** ' . $type['done_signal'] . "\n";
-    if (!empty($type['kickback']['target'])) {
-        $out .= '- **Kickback:** may route back to `' . $type['kickback']['target'] . '`';
-        if (!empty($type['kickback']['doc'])) $out .= ' via `' . $type['kickback']['doc'] . '`';
-        $out .= "\n";
+    if (!empty($type['kickback_doc'])) {
+        $out .= '- **Kickback:** when kicking work back, write feedback to `' . $type['kickback_doc']
+            . '` (the pipeline wires where it routes).' . "\n";
     }
     return $out;
 }
@@ -252,14 +251,20 @@ function deveryman_pipeline_template_seed(): array {
             'branching' => ['base_branch' => 'staging', 'release_branch' => 'main', 'feature_branch_prefix' => 'feature/'],
             'backlog_file' => 'product-backlog.md', 'deployment_note' => 'dev-inbox/deployment-note.md',
             'autonomy_level' => 3, 'poll_interval' => 30, 'pipeline_version' => '1',
+            // Kickbacks are wired here on the template, not defaulted on the agent
+            // types: the four review/test stages route back to dev.
             'nodes' => [
                 ['id' => 'features', 'agent_type' => 'features'],
                 ['id' => 'acceptance', 'agent_type' => 'acceptance'],
                 ['id' => 'dev', 'agent_type' => 'dev'],
-                ['id' => 'testing-staging', 'agent_type' => 'testing-staging'],
-                ['id' => 'integration-testing', 'agent_type' => 'integration-testing'],
-                ['id' => 'reviewer', 'agent_type' => 'reviewer'],
-                ['id' => 'ux-ui', 'agent_type' => 'ux-ui'],
+                ['id' => 'testing-staging', 'agent_type' => 'testing-staging',
+                    'kickback' => ['target' => 'dev', 'doc' => 'dev-inbox/acceptance-fixes.md']],
+                ['id' => 'integration-testing', 'agent_type' => 'integration-testing',
+                    'kickback' => ['target' => 'dev', 'doc' => 'dev-inbox/integration-fixes.md']],
+                ['id' => 'reviewer', 'agent_type' => 'reviewer',
+                    'kickback' => ['target' => 'dev', 'doc' => 'dev-inbox/reviewer-feedback.md']],
+                ['id' => 'ux-ui', 'agent_type' => 'ux-ui',
+                    'kickback' => ['target' => 'dev', 'doc' => 'dev-inbox/ux-fixes.md']],
                 ['id' => 'deploy', 'agent_type' => 'deploy'],
                 ['id' => 'testing-live', 'agent_type' => 'testing-live'],
             ],
@@ -308,10 +313,13 @@ function deveryman_save_pipeline_template(string $id, array $entry): bool {
 }
 
 /**
- * Materialize any user-authored roles a template uses into a per-project override
- * dir the daemon reads: <pipeline_root>/roles/<node-id>/CLAUDE.md. Builtin roles
- * (role.ref) are skipped, since the daemon already has them under dpa/agents. Called
- * by the applier before `--instantiate`. Returns the node ids that were written.
+ * Materialize per-node role overrides a template needs into the dir the daemon reads
+ * by node id: <pipeline_root>/roles/<node-id>/CLAUDE.md. Written for a node when its
+ * role is user-authored (no ref, so the daemon has no global copy) OR its node id
+ * differs from its agent type (a repeated/renamed instance the daemon could not find
+ * under dpa/agents/<node-id>). A single builtin instance whose id equals its type is
+ * skipped: the daemon already has that role globally. Called by the applier before
+ * `--instantiate`. Returns the node ids that were written.
  */
 function deveryman_write_custom_roles(array $pipelineTpl, string $pipelineRoot): array {
     $agentTypes = deveryman_agent_types();
@@ -319,8 +327,10 @@ function deveryman_write_custom_roles(array $pipelineTpl, string $pipelineRoot):
     foreach ($pipelineTpl['nodes'] ?? [] as $node) {
         $typeId = $node['agent_type'] ?? '';
         $type = $agentTypes[$typeId] ?? null;
-        if ($type === null || !empty($type['role']['ref'])) continue;   // builtin ref: daemon has it
+        if ($type === null) continue;
         $id = $node['id'] ?? $typeId;
+        $isBuiltinRole = !empty($type['role']['ref']);
+        if ($isBuiltinRole && $id === $typeId) continue;   // daemon already has this role globally
         $dir = rtrim($pipelineRoot, '/') . '/roles/' . $id;
         if (!is_dir($dir) && !@mkdir($dir, 0775, true)) continue;
         if (@file_put_contents($dir . '/CLAUDE.md', deveryman_render_role($type)) !== false) $written[] = $id;
@@ -346,7 +356,9 @@ function deveryman_resolve_node(array $node, array $agentTypes): ?array {
         'reads'       => $node['reads']       ?? $type['reads']       ?? [],
         'writes'      => $node['writes']      ?? $type['writes']      ?? [],
         'done_signal' => $node['done_signal'] ?? $type['done_signal'] ?? '',
-        'kickback'    => array_key_exists('kickback', $node) ? $node['kickback'] : ($type['kickback'] ?? null),
+        // Kickback routing is wired on the node (per pipeline), never inherited from
+        // the type. The type only advertises the doc it leaves (kickback_doc).
+        'kickback'    => $node['kickback'] ?? null,
     ];
 }
 

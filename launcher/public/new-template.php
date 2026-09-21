@@ -32,18 +32,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $types = template_node_types();
     $rowTypes = $_POST['node_type'] ?? [];
+    $rowIds   = $_POST['node_id'] ?? [];
     $rowKick  = $_POST['kickback'] ?? [];
     $nodes = []; $flow = []; $gates = []; $prev = null;
     foreach ($rowTypes as $i => $typeId) {
         $typeId = trim((string) $typeId);
         if ($typeId === '' || !isset($types[$typeId])) continue;   // skip empty/invalid rows
-        $node = ['id' => $typeId, 'agent_type' => $typeId];
-        $kt = trim((string) ($rowKick[$i] ?? ''));
-        if ($kt !== '') $node['kickback'] = ['target' => $kt, 'doc' => $types[$typeId]['kickback']['doc'] ?? ''];
+        // Node id defaults to the type id; give repeats a distinct id (e.g. a second
+        // reviewer as `reviewer-final`) so the same type can sit in more than one spot.
+        $nid = deveryman_slug_id(trim((string) ($rowIds[$i] ?? ''))) ?? $typeId;
+        $node = ['id' => $nid, 'agent_type' => $typeId];
+        $kt = deveryman_slug_id(trim((string) ($rowKick[$i] ?? '')));
+        if ($kt !== null) {
+            $node['kickback'] = ['target' => $kt,
+                'doc' => $types[$typeId]['kickback_doc'] ?? ('dev-inbox/' . $nid . '-feedback.md')];
+        }
         $nodes[] = $node;
-        if (($types[$typeId]['kind'] ?? 'stage') === 'gate') $gates[] = $typeId;
-        if ($prev !== null) $flow[] = ['from' => $prev, 'to' => $typeId];
-        $prev = $typeId;
+        if (($types[$typeId]['kind'] ?? 'stage') === 'gate') $gates[] = $nid;
+        if ($prev !== null) $flow[] = ['from' => $prev, 'to' => $nid];
+        $prev = $nid;
     }
     if (!$nodes) $errors[] = 'Add at least one stage.';
 
@@ -104,7 +111,7 @@ if ($pre !== null) {
     foreach ($pre['nodes'] ?? [] as $n) $byId[$n['id'] ?? ''] = $n;
     foreach ($order as $nid) {
         $n = $byId[$nid] ?? null; if ($n === null) continue;
-        $rows[] = ['type' => $n['agent_type'] ?? '', 'kick' => $n['kickback']['target'] ?? ''];
+        $rows[] = ['type' => $n['agent_type'] ?? '', 'id' => $n['id'] ?? '', 'kick' => $n['kickback']['target'] ?? ''];
     }
 }
 $b = $pre['branching'] ?? [];
@@ -124,20 +131,23 @@ echo '<label>Name <input type="text" name="label" value="' . fw_h($preIsBuiltin 
 echo '<label>Description <input type="text" name="description" value="' . fw_h((string) $g('description')) . '" placeholder="One line"></label>';
 
 echo '<h2>Stages, in order</h2>';
-echo '<p class="meta">Pick an agent type per slot; empty slots are skipped. A slot\'s kickback target '
-    . 'is the id of an earlier node it can route back to (e.g. <code>dev</code>). Node id = agent-type id, '
-    . 'so use each type once in this form editor.</p>';
+echo '<p class="meta">Pick an agent type per slot; empty slots are skipped. Node id defaults to the '
+    . 'type id; to place the same type more than once, give the repeats a distinct id (e.g. a second '
+    . 'reviewer as <code>reviewer-final</code>). Kickback target is the id of an earlier node this one '
+    . 'can route back to (e.g. <code>dev</code>); every review/test stage should wire one.</p>';
 for ($i = 0; $i < TEMPLATE_ROWS; $i++) {
     $curType = $rows[$i]['type'] ?? '';
+    $curId   = $rows[$i]['id'] ?? '';
     $curKick = $rows[$i]['kick'] ?? '';
     echo '<div class="card" style="padding:8px">';
-    echo '<select name="node_type[' . $i . ']" style="width:60%"><option value="">(empty)</option>';
+    echo '<select name="node_type[' . $i . ']" style="width:40%"><option value="">(empty)</option>';
     foreach ($types as $tid => $t) {
         $sel = ($tid === $curType) ? ' selected' : '';
         echo '<option value="' . fw_h($tid) . '"' . $sel . '>' . fw_h(($t['label'] ?? $tid) . ' [' . ($t['kind'] ?? 'stage') . ']') . '</option>';
     }
     echo '</select> ';
-    echo '<input type="text" name="kickback[' . $i . ']" value="' . fw_h((string) $curKick) . '" placeholder="kickback to (optional)" style="width:35%">';
+    echo '<input type="text" name="node_id[' . $i . ']" value="' . fw_h((string) $curId) . '" placeholder="node id (optional)" style="width:27%"> ';
+    echo '<input type="text" name="kickback[' . $i . ']" value="' . fw_h((string) $curKick) . '" placeholder="kickback to" style="width:27%">';
     echo '</div>';
 }
 

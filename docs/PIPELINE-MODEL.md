@@ -7,10 +7,14 @@ the source of truth.
 
 ## Concepts
 
-- **Node (agent).** A stage or gate. Has a role (its CLAUDE.md), a set of files it
-  **reads**, a set it **writes**, a **done-signal** (how it tells the underseer it
-  finished), and an optional **kickback** (a status it can raise, a target node to
-  route back to, and the feedback doc it leaves).
+- **Node (agent).** A stage or gate. It has a **node id** (unique in the pipeline)
+  and an **agent type** (the reusable role it draws from); the two differ when the
+  same type sits in more than one spot (e.g. `reviewer` and `reviewer-final` both of
+  type `reviewer`). From its type it takes a role (CLAUDE.md), a set of files it
+  **reads**, a set it **writes**, and a **done-signal**. Its **kickback** (a target
+  node to route back to, plus the feedback doc it leaves) is wired on the node per
+  pipeline, never defaulted on the type: a type only advertises the doc it would
+  leave (`kickback_doc`), so nothing kicks back until a template wires a target.
 - **Flow edge.** A forward hand-off `A -> B`: after A completes, B runs.
 - **Artifact wiring.** The files on the edges: a file is **produced by** one node
   and **consumed by** one or more later nodes. This is the "files lane" under the
