@@ -446,6 +446,18 @@ function deveryman_compile_template(array $tpl): ?array {
         }
     }
 
+    // Flow graph with guards. Emitted only when the template actually branches (some
+    // edge carries a `when` guard, i.e. tag-based routing): the daemon then routes by
+    // the feature's tag instead of walking the linear `stages` index. A plain pipeline
+    // omits `flow` and keeps the exact index-walk behaviour it had before.
+    $flowOut = []; $hasGuard = false;
+    foreach ($tpl['flow'] ?? [] as $e) {
+        if (empty($e['from']) || empty($e['to'])) continue;
+        $edge = ['from' => $e['from'], 'to' => $e['to']];
+        if (!empty($e['when'])) { $edge['when'] = $e['when']; $hasGuard = true; }
+        $flowOut[] = $edge;
+    }
+
     $b = $tpl['branching'] ?? [];
     $out = [
         'stages' => $stages,
@@ -464,6 +476,7 @@ function deveryman_compile_template(array $tpl): ?array {
     // pipeline (like DPA standard) compiles to exactly the config it did before.
     if ($escalationStages) $out['escalation_stages'] = $escalationStages;
     if ($escalation) $out['escalation'] = $escalation;
+    if ($hasGuard) $out['flow'] = $flowOut;
     return $out;
 }
 

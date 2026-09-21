@@ -85,6 +85,10 @@ class Project:
         # Empty for a plain pipeline, so nothing changes for existing projects.
         self.escalation = self.cfg.get("escalation", {}) or {}
         self.escalation_stages = self.cfg.get("escalation_stages", []) or []
+        # Flow graph with guards, present only when the pipeline branches (tag-based
+        # routing). When set, next_stage routes along these edges by the feature's tag
+        # instead of walking the linear `stages` index. Empty -> the plain linear walk.
+        self.flow = self.cfg.get("flow", []) or []
 
     # derived paths
     @property
@@ -264,7 +268,10 @@ def read_queue(p: "Project") -> list:
             continue
         if set(cells[0]) <= set("- "):
             continue
-        items.append({"id": cells[0], "feature": cells[1], "status": cells[2], "depends_on": cells[3]})
+        items.append({"id": cells[0], "feature": cells[1], "status": cells[2], "depends_on": cells[3],
+                      # Optional 5th column: a routing tag (e.g. ui / backend / bugfix)
+                      # the pipeline forks on. Absent -> no tag (the default route).
+                      "tag": cells[4] if len(cells) >= 5 else ""})
     return items
 
 
@@ -734,15 +741,37 @@ def escalate(p: "Project", reason_str: str, detail: str = ""):
 # State machine
 # --------------------------------------------------------------------------- #
 
-def next_stage(p: "Project", stage: str) -> str | None:
-    """The next stage forward, within whichever chain `stage` belongs to. A feature
-    on the escalation chain advances through escalation_stages; reaching the end of
-    either chain returns None (end of pipeline -> merge)."""
+def next_stage(p: "Project", stage: str, state: dict | None = None) -> str | None:
+    """The next stage forward. When the pipeline carries a flow graph (it branches),
+    route along the edges out of `stage`, preferring an edge whose guard matches the
+    feature's tag, then a guardless default edge. Otherwise walk the linear chain the
+    stage belongs to (main or escalation). Returns None at a genuine end of a chain.
+    A fork whose guards match nothing (and has no default) is detected via
+    stage_outgoing() by the caller, not silently ended here."""
+    if p.flow:
+        tag = (state or {}).get("current_tag", "")
+        outs = [e for e in p.flow if e.get("from") == stage]
+        if not outs:
+            return None
+        for e in outs:                       # a tag-specific guard wins
+            w = e.get("when") or {}
+            if w.get("tag") and w["tag"] == tag:
+                return e.get("to")
+        for e in outs:                       # else the default (guardless) edge
+            if not e.get("when"):
+                return e.get("to")
+        return None                          # a fork with no matching route (caller escalates)
     for seq in (p.stages, p.escalation_stages):
         if stage in seq:
             i = seq.index(stage)
             return seq[i + 1] if i + 1 < len(seq) else None
     return None
+
+
+def stage_outgoing(p: "Project", stage: str) -> bool:
+    """True if `stage` has any outgoing flow edge (so a None from next_stage means a
+    fork matched no route, not a genuine end)."""
+    return bool(p.flow) and any(e.get("from") == stage for e in p.flow)
 
 
 def kickback_route(p: "Project", stage: str, state: dict) -> dict:
@@ -809,7 +838,9 @@ def start_feature(p: "Project", item: dict):
         "current_feature": feature, "current_feature_id": item["id"],
         "current_branch": branch,
         "current_pipeline_version": p.pipeline_version,
-        "kick_back_count": "0", "waiting_for": "none",
+        # The routing tag travels with the feature; forks read it via next_stage.
+        "current_tag": item.get("tag", ""),
+        "kick_back_count": "0", "kick_back_by_stage": "", "waiting_for": "none",
     })
     log(p, f"Starting feature '{feature}' (id {item['id']}) at stage {first} on branch {branch} (from {p.base_branch})")
     start_agent(p, first, feature, branch)
@@ -917,7 +948,17 @@ def handle(p: "Project", state: dict, items: list):
             write_state(p, {"stage_status": "BLOCKED", "waiting_for": "OPERATOR"})
             log(p, f"Post-condition failed for {stage}: missing {[str(m) for m in miss_out]}")
             return
-        nxt = next_stage(p, stage)
+        nxt = next_stage(p, stage, state)
+        if nxt is None and stage_outgoing(p, stage):
+            # A fork whose guards matched no route (e.g. an unrecognised feature tag):
+            # do not silently end/merge a half-built feature. Block and escalate.
+            mark_active_feature("BLOCKED")
+            escalate(p, f"Feature '{feature}' could not be routed after '{stage}'",
+                     f"Its tag '{state.get('current_tag','')}' matched no route out of "
+                     f"'{stage}' and there is no default edge.")
+            write_state(p, {"stage_status": "BLOCKED", "waiting_for": "OPERATOR"})
+            log(p, f"Unrouted after {stage}: tag '{state.get('current_tag','')}' matched no edge")
+            return
         if nxt is None:
             # End of pipeline: merge the feature back into the base branch, then
             # the queue continues on a fresh branch cut from the updated base.

@@ -114,6 +114,33 @@ without forking the whole library, or forked when the tweak is worth keeping.
 - Note: the agent-type editor now saves `kickback_doc` (the doc a type leaves), not a
   kickback target, matching "kickbacks are wired per pipeline".
 
+### 8. Feature-tag routing + a merge node
+Generalising the "second chain" idea from a failure-only trigger to a **feature
+trigger**: a feature carries a tag (ui / backend / bugfix / ...), goes through a
+shared front, then forks onto different chains by tag, and the chains rejoin at a
+single **merge node**. Still exclusive (one path per feature), so it keeps the
+"one active stage per feature" invariant; simultaneous parallel branches with a join
+(a true DAG) stay deferred.
+- [x] Feature tags: `read_queue` parses an optional 5th build-queue column as a
+  routing `tag`; `start_feature` writes it to state as `current_tag`. Absent = the
+  default (guardless) route.
+- [x] Guarded routing: a flow edge can carry a `when` guard (`{tag: ...}`); compile
+  emits the full `flow` graph only when some edge is guarded (a plain pipeline omits
+  it and keeps the exact linear index-walk). `next_stage(stage, state)` routes along
+  the edges out of a node, preferring a tag-matching guard, then a guardless default;
+  a fork that matches no route (and has no default) is caught and escalated, never
+  silently ended.
+- [ ] Merge node: a dedicated, deterministic merge stage the daemon runs at the
+  rejoin (reusing merge_feature_to_base; escalates on conflict, never force-merges),
+  so ux-ui stops implicitly owning the merge and the graph has one clear end. DPA
+  standard grows a merge node at its tail. (Building next.)
+- [ ] Form editor: a "Branch chains (by tag)" section + a merge stage, wiring the
+  shared front -> per-tag branches -> merge. The full free-form branching is the
+  visual builder's job.
+- Decider: the tag is set when the feature is created (the product/features agent
+  writes the build-queue row); a deterministic guard match keeps routing transparent.
+  An LLM router/classifier is a later upgrade.
+
 ### Kickback contract (for the visual builder)
 Every review/test agent CAN kick back (it advertises a `kickback_doc`), but nothing
 kicks back until wired. In the visual builder, drawing a kickback line raises the
