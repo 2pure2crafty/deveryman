@@ -35,6 +35,49 @@ function deveryman_pipeline_templates_path(): string {
     return deveryman_registry_dir() . '/pipeline-templates.json';
 }
 
+function deveryman_tags_path(): string {
+    return deveryman_registry_dir() . '/tags.json';
+}
+
+/* --- tag vocabulary -------------------------------------------------------- */
+/*
+ * The single controlled vocabulary that tag-based routing draws from. Routes guard
+ * on a tag; the tagger stage sets a feature's tag from this set. Everywhere a tag is
+ * chosen it is picked from here (a dropdown), never free-typed, so a typo cannot
+ * create a dead route. Seeded with a starter set; users add more.
+ */
+function deveryman_tag_seed(): array {
+    return [
+        'ui'      => ['label' => 'UI', 'description' => 'User-facing / front-end work.'],
+        'backend' => ['label' => 'Backend', 'description' => 'Server-side / data / API work.'],
+        'bugfix'  => ['label' => 'Bug fix', 'description' => 'A fix for a defect, often a lighter path.'],
+    ];
+}
+
+/** All tags: the JSON registry if it exists, else the builtin seed. */
+function deveryman_tags(): array {
+    $p = deveryman_tags_path();
+    if (is_file($p)) {
+        $d = json_decode((string) @file_get_contents($p), true);
+        if (is_array($d) && isset($d['tags']) && is_array($d['tags'])) return $d['tags'];
+    }
+    return deveryman_tag_seed();
+}
+
+/** Save (create or overwrite) a tag. Seeds the file on first write. Returns true on success. */
+function deveryman_save_tag(string $id, array $entry): bool {
+    $p = deveryman_tags_path();
+    if (!is_dir(deveryman_registry_dir())) @mkdir(deveryman_registry_dir(), 0775, true);
+    if (!is_file($p)) {
+        if (!fw_write_json_atomic($p, ['tags' => deveryman_tag_seed()])) return false;
+    }
+    return fw_update_json($p, function (array $reg) use ($id, $entry): array {
+        $reg['tags'] ??= [];
+        $reg['tags'][$id] = $entry;
+        return $reg;
+    });
+}
+
 /**
  * Lowercase [a-z0-9-] id for a registry entry, or null if none is derivable.
  * Named distinctly from lib.php's deveryman_slugify so registry.php can be required
