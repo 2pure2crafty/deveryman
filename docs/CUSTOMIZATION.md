@@ -54,11 +54,13 @@ execution is deferred.
   compiles the graph into the underseer config.
 
 ### 4. Import-repo wiring (this branch's namesake)
-- [ ] Make import template-driven (like new-project).
-- [ ] Add a wiring step for imported repos: which branch is base (their staging),
-  which is release (their live), where ux-ui merges, where deploy merges from and
-  into, the deployment note. Removes today's limit that DPA standard forces a new
-  repo.
+- [x] Make import template-driven (like new-project): `import.php` now picks a
+  pipeline template and shares the applier's `deveryman_finalize_project` tail.
+- [x] Add a wiring step for imported repos: base branch (their staging, where
+  features branch off and ux-ui merges back), release branch (their live, the
+  deploy-gate promote target), feature-branch prefix, and the deployment note.
+  Branches are discovered without cloning (`gh api` / `git ls-remote`), so the repo
+  is only cloned on final confirm. DPA standard no longer forces a fresh repo.
 
 ### 5. Underseer consumption
 - [ ] The underseer reads the generated config only; no new exposed knobs; it

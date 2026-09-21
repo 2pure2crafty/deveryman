@@ -201,7 +201,42 @@ function deveryman_apply_template(string $slug, string $label, string $templateI
         if ($e !== 0) $warnings[] = 'GitHub repo not created (gh: ' . trim($er) . '). The local repo is fine; add a remote later.';
     }
 
-    // 3. DPA capability: write project.json at the container root + materialize.
+    // 3-5: DPA capability (project.json + materialize), optional Conductor scaffold,
+    //      and registration in both registries. Shared with the import flow.
+    $fin = deveryman_finalize_project($slug, $label, $container, $repoDir, $templateId,
+        ['scaffold_conductor' => $scaffoldConductor]);
+    if (!$fin['ok']) return ['ok' => false, 'errors' => $fin['errors'], 'warnings' => array_merge($warnings, $fin['warnings'])];
+    return ['ok' => true, 'errors' => [], 'warnings' => array_merge($warnings, $fin['warnings'])];
+}
+
+/**
+ * Finalize a container whose repo checkout is already in place into a fully
+ * registered project: give it the compiled-template DPA capability (project.json +
+ * custom roles + --instantiate), optionally scaffold the template's Conductor
+ * agents, and register it in both registries. Shared by new-project (fresh repo)
+ * and import (cloned repo). Rolls the container + partial registration back on any
+ * failure. Returns ['ok','errors','warnings'].
+ *
+ * $opts keys (all optional):
+ *   context             array  project.json context block (defaults to label + boilerplate)
+ *   branch_overrides    array  base_branch / release_branch / feature_branch_prefix /
+ *                              deployment_note to override the template (import wiring)
+ *   scaffold_conductor  bool   default true
+ *   repo_url            string clonable/browsable URL for the Conductor registry 'repo' field
+ */
+function deveryman_finalize_project(string $slug, string $label, string $container, string $repoDir, string $templateId, array $opts = []): array {
+    $tpl = deveryman_template($templateId);
+    if ($tpl === null) return ['ok' => false, 'errors' => ["Unknown template: {$templateId}"], 'warnings' => []];
+    $root = rtrim(fw_config_get('DEVERYMAN_PROJECTS_DIR', '/var/www/dpa-projects'), '/');
+    $projectsPath = __DIR__ . '/../projects.json';
+    $condReg = __DIR__ . '/../conductor/registry.json';
+    $underseer = __DIR__ . '/../dpa/underseer.py';
+    $scaffoldConductor = $opts['scaffold_conductor'] ?? true;
+    $repoUrl = $opts['repo_url'] ?? null;
+    $overrides = array_intersect_key($opts['branch_overrides'] ?? [],
+        array_flip(['base_branch', 'release_branch', 'feature_branch_prefix', 'deployment_note']));
+
+    // DPA capability.
     $caps = [];
     if ($tpl['conductor']) $caps['conductor'] = true;
     if (!empty($tpl['dpa'])) {
@@ -210,24 +245,25 @@ function deveryman_apply_template(string $slug, string $label, string $templateI
             'repo_root' => $repoDir, 'pipeline_root' => $container . '/pipeline',
             'tmux_prefix' => strtoupper(substr(preg_replace('/[^a-z0-9]/', '', $slug), 0, 6)) ?: 'DPA',
             'git_user' => null,
-            'context' => [
+            'context' => $opts['context'] ?? [
                 'project_summary' => $label, 'tech_stack' => '',
                 'conventions' => 'Small, self-contained changes.',
                 'user_types' => '', 'design_notes' => '',
             ],
-        ], $tpl['dpa']);
+        ], $tpl['dpa'], $overrides);
+        if ($repoUrl) $projectJson['repo_url'] = $repoUrl;
         $configPath = $container . '/project.json';
-        if (!fw_write_json_atomic($configPath, $projectJson)) { deveryman_rollback_container($container, $root); return ['ok' => false, 'errors' => ['could not write project.json'], 'warnings' => $warnings]; }
+        if (!fw_write_json_atomic($configPath, $projectJson)) { deveryman_rollback_container($container, $root); return ['ok' => false, 'errors' => ['could not write project.json'], 'warnings' => []]; }
         // Materialize any user-authored roles this template uses into the per-project
         // roles/ override dir the daemon reads, BEFORE --instantiate copies them in.
         $rawTpl = deveryman_pipeline_template($templateId);
         if ($rawTpl !== null) deveryman_write_custom_roles($rawTpl, $container . '/pipeline');
         [$e, , $er] = fw_run_cmd(['python3', $underseer, $configPath, '--instantiate'], null, '', 120);
-        if ($e !== 0) { deveryman_rollback_container($container, $root); return ['ok' => false, 'errors' => ['materialize (--instantiate) failed: ' . trim($er)], 'warnings' => $warnings]; }
+        if ($e !== 0) { deveryman_rollback_container($container, $root); return ['ok' => false, 'errors' => ['materialize (--instantiate) failed: ' . trim($er)], 'warnings' => []]; }
         $caps['dpa'] = ['config' => $configPath];
     }
 
-    // 4. Conductor capability: scaffold agents + write the Conductor registry.
+    // Conductor capability: scaffold agents + write the Conductor registry.
     // Skipped when a graduating one-shot agent will be moved in as the agent.
     if ($scaffoldConductor && $tpl['conductor'] && !empty($tpl['conductor_agents'])) {
         $prefix = fw_config_get('CONDUCTOR_TMUX_PREFIX', 'DEV');
@@ -235,7 +271,7 @@ function deveryman_apply_template(string $slug, string $label, string $templateI
         foreach ($tpl['conductor_agents'] as $an) {
             if (!deveryman_scaffold_conductor_agent($container, $an, $label)) {
                 deveryman_rollback_container($container, $root);
-                return ['ok' => false, 'errors' => ["could not scaffold Conductor agent '{$an}'"], 'warnings' => $warnings];
+                return ['ok' => false, 'errors' => ["could not scaffold Conductor agent '{$an}'"], 'warnings' => []];
             }
             $agents[$an] = [
                 'label' => ucfirst($an), 'path' => 'conductor/' . $an,
@@ -243,16 +279,16 @@ function deveryman_apply_template(string $slug, string $label, string $templateI
                 'model' => 'sonnet', 'permission_mode' => 'acceptEdits', 'auto_wrapdown' => false,
             ];
         }
-        $ok = fw_update_json($condReg, function (array $reg) use ($slug, $label, $container, $agents): array {
+        $ok = fw_update_json($condReg, function (array $reg) use ($slug, $label, $container, $agents, $repoUrl): array {
             $reg['projects'] ??= [];
-            $reg['projects'][$slug] = ['label' => $label, 'path' => $container, 'repo' => null,
+            $reg['projects'][$slug] = ['label' => $label, 'path' => $container, 'repo' => $repoUrl,
                 'description' => $label, 'agents' => $agents];
             return $reg;
         });
-        if (!$ok) { deveryman_rollback_container($container, $root); return ['ok' => false, 'errors' => ['could not write the Conductor registry'], 'warnings' => $warnings]; }
+        if (!$ok) { deveryman_rollback_container($container, $root); return ['ok' => false, 'errors' => ['could not write the Conductor registry'], 'warnings' => []]; }
     }
 
-    // 5. Register in the shared projects.json.
+    // Register in the shared projects.json.
     $ok = fw_update_json($projectsPath, function (array $reg) use ($slug, $label, $container, $caps): array {
         $reg['projects'] ??= [];
         $reg['projects'][$slug] = ['label' => $label, 'path' => $container, 'capabilities' => $caps];
@@ -261,10 +297,10 @@ function deveryman_apply_template(string $slug, string $label, string $templateI
     if (!$ok) {
         deveryman_unregister($condReg, $slug);
         deveryman_rollback_container($container, $root);
-        return ['ok' => false, 'errors' => ['could not register in projects.json'], 'warnings' => $warnings];
+        return ['ok' => false, 'errors' => ['could not register in projects.json'], 'warnings' => []];
     }
 
-    return ['ok' => true, 'errors' => [], 'warnings' => $warnings];
+    return ['ok' => true, 'errors' => [], 'warnings' => []];
 }
 
 /* --- project hub: git status, repo resolution, session-handoff peek --------- */
