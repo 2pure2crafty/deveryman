@@ -490,6 +490,25 @@ def stage_io(p: "Project", stage: str, feature: str) -> tuple[list, list]:
     return resolve(io.get("reads", [])), resolve(io.get("writes", []))
 
 
+def validate_wiring(p: "Project") -> list:
+    """Safeguard 2: every declared stage input must be produced by an earlier stage
+    (or be a pre-existing pipeline input). Returns a list of problems; empty means
+    well-wired. Compares the raw declared paths (with the `<slug>` token intact), so
+    a consumer's read must exactly match some earlier producer's write."""
+    problems = []
+    produced = set()
+    prewired = {"product-backlog.md", "build-queue.md", p.backlog_file}
+    for stage in p.stages:
+        io = p.io.get(stage, {})
+        for r in io.get("reads", []):
+            if r in prewired or r in produced:
+                continue
+            problems.append(f"'{stage}' reads '{r}' which no earlier stage writes")
+        for w in io.get("writes", []):
+            produced.add(w)
+    return problems
+
+
 def write_pipeline_instructions(p: "Project", stage: str, feature: str):
     """Write the authoritative, read-only pipeline overlay into the agent's dir. It
     binds this stage's inputs/outputs/done-signal for this run and OVERRIDES any
@@ -732,6 +751,12 @@ def handle(p: "Project", state: dict, items: list):
             update_queue_status(p, fid, new_status)
 
     if status in ("IDLE", "") or stage == "none":
+        # Safeguard 2: never start work on a mis-wired pipeline. Signal and hold.
+        problems = validate_wiring(p)
+        if problems:
+            signal(p, "Pipeline wiring is invalid: " + "; ".join(problems[:3])
+                      + ". Fix the config and restart; no features will start.")
+            return
         nxt = next_queued(items)
         if nxt:
             start_feature(p, nxt)
