@@ -24,10 +24,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = "'{$id}' is a builtin agent type; pick another name.";
     }
 
-    $target = trim($_POST['kickback_target'] ?? '');
-    $doc    = trim($_POST['kickback_doc'] ?? '');
-    $kickback = $target !== '' ? ['target' => $target, 'doc' => $doc] : null;
-
     $entry = [
         'label' => $label,
         'kind'  => $kind,
@@ -40,8 +36,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'reads'       => deveryman_lines($_POST['reads'] ?? ''),
         'writes'      => deveryman_lines($_POST['writes'] ?? ''),
         'done_signal' => trim($_POST['done_signal'] ?? '') ?: 'set the pipeline-state Stage status to COMPLETE',
-        'kickback'    => $kickback,
-        'source'      => 'user',
+        // A type advertises the doc it leaves when kicking back; WHERE it routes is
+        // wired per pipeline on the template node, not here.
+        'kickback_doc' => trim($_POST['kickback_doc'] ?? '') ?: null,
+        'source'       => 'user',
     ];
 
     if (!$errors) {
@@ -60,11 +58,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-/* ---------- GET: the form ---------- */
-// Optional prefill for editing a user type (?id=).
+/* ---------- GET: the form ----------
+ * ?id=<user type>   edit that user type in place (prefills the name too).
+ * ?from=<any type>  clone into a NEW type: prefill everything except the name, so a
+ *                   builtin can be a starting point (Feature 7: save as a new type).
+ */
 $editId = $_GET['id'] ?? '';
+$fromId = $_GET['from'] ?? '';
+$isClone = false;
 $pre = ($editId !== '') ? deveryman_agent_type($editId) : null;
-if ($pre !== null && ($pre['source'] ?? '') === 'builtin') $pre = null;   // builtins are read-only
+if ($pre !== null && ($pre['source'] ?? '') === 'builtin') $pre = null;   // builtins are not edited in place
+if ($pre === null && $fromId !== '') {
+    $src = deveryman_agent_type($fromId);
+    if ($src !== null) {
+        $isClone = true;
+        // A builtin role is a CLAUDE.md file (no do/do-not split); drop its text into
+        // free-form as an editable starting point.
+        if (!empty($src['role']['ref'])) {
+            $src['role'] = ['summary' => '', 'dos' => [], 'donts' => [], 'freeform' => rtrim(deveryman_render_role($src))];
+        }
+        $src['label'] = '';   // force a new name
+        $pre = $src;
+    }
+}
 $v = function (string $path, $default = '') use ($pre) {
     if ($pre === null) return $default;
     $cur = $pre;
@@ -72,13 +88,16 @@ $v = function (string $path, $default = '') use ($pre) {
     return $cur;
 };
 $lines = fn($arr) => is_array($arr) ? implode("\n", $arr) : '';
+$editing = $pre !== null && !$isClone;
 
-fw_header($pre ? 'Edit agent type' : 'New agent type', 'agent-types.php');
-echo '<h1>' . ($pre ? 'Edit agent type' : 'New agent type') . '</h1>';
+$title = $editing ? 'Edit agent type' : 'New agent type';
+fw_header($title, 'agent-types.php');
+echo '<h1>' . fw_h($title) . '</h1>';
+if ($isClone) echo '<p class="meta">Cloning an existing type. Give it a new name to save your own copy.</p>';
 echo '<p class="desc">Save a reusable agent: its role (what it does), the files it '
-    . 'reads and writes, how it signals done, and whether it can kick work back. Pipeline '
-    . 'templates then pick from these types. The role becomes the agent\'s CLAUDE.md; its '
-    . 'inputs and outputs are enforced by the pipeline at run time.</p>';
+    . 'reads and writes, how it signals done, and the doc it leaves when it kicks work back. '
+    . 'Pipeline templates then pick from these types and wire where a kickback routes. The role '
+    . 'becomes the agent\'s CLAUDE.md; its inputs and outputs are enforced by the pipeline at run time.</p>';
 
 echo '<form method="post" action="new-agent-type.php">' . fw_csrf_field();
 echo '<label>Name <input type="text" name="label" value="' . fw_h((string) $v('label')) . '" placeholder="e.g. Accessibility" required></label>';
@@ -102,9 +121,9 @@ echo '<label>Writes (one file per line) <textarea name="writes" rows="3" placeho
 echo '<label>Done signal <input type="text" name="done_signal" value="' . fw_h((string) $v('done_signal', 'set the pipeline-state Stage status to COMPLETE')) . '"></label>';
 
 echo '<h2>Kickback (optional)</h2>';
-echo '<p class="meta">If this agent can send work back, name the node it routes to and the feedback doc it leaves. A template can override the target per node.</p>';
-echo '<label>Kickback target node <input type="text" name="kickback_target" value="' . fw_h((string) $v('kickback.target')) . '" placeholder="e.g. dev"></label>';
-echo '<label>Kickback doc <input type="text" name="kickback_doc" value="' . fw_h((string) $v('kickback.doc')) . '" placeholder="dev-inbox/a11y-fixes.md"></label>';
+echo '<p class="meta">If this agent can send work back (a reviewer or tester), name the feedback doc it '
+    . 'writes. Where it routes is wired per pipeline on the template, not here.</p>';
+echo '<label>Kickback doc <input type="text" name="kickback_doc" value="' . fw_h((string) $v('kickback_doc')) . '" placeholder="dev-inbox/a11y-fixes.md"></label>';
 
 echo '<button class="btn" type="submit" style="margin-top:12px">Save agent type</button></form>';
 fw_footer();

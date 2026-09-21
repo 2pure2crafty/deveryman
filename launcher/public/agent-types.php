@@ -35,7 +35,10 @@ foreach (deveryman_agent_types() as $id => $t) {
         echo '<div class="meta">kickback to <code>' . fw_h($t['kickback']['target']) . '</code>'
             . (!empty($t['kickback']['doc']) ? ' via ' . fw_h($t['kickback']['doc']) : '') . '</div>';
     }
-    if ($isUser) echo '<div style="margin-top:8px"><a href="new-agent-type.php?id=' . fw_h(rawurlencode($id)) . '">Edit</a></div>';
+    echo '<div style="margin-top:8px">';
+    if ($isUser) echo '<a href="new-agent-type.php?id=' . fw_h(rawurlencode($id)) . '">Edit</a> &nbsp;|&nbsp; ';
+    echo '<a href="new-agent-type.php?from=' . fw_h(rawurlencode($id)) . '">Clone into a new type</a>';
+    echo '</div>';
     echo '</div>';
 }
 

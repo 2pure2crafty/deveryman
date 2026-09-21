@@ -34,6 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $rowTypes = $_POST['node_type'] ?? [];
     $rowIds   = $_POST['node_id'] ?? [];
     $rowKick  = $_POST['kickback'] ?? [];
+    $rowExtra = $_POST['node_extra'] ?? [];
     $nodes = []; $flow = []; $gates = []; $prev = null;
     foreach ($rowTypes as $i => $typeId) {
         $typeId = trim((string) $typeId);
@@ -42,6 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // reviewer as `reviewer-final`) so the same type can sit in more than one spot.
         $nid = deveryman_slug_id(trim((string) ($rowIds[$i] ?? ''))) ?? $typeId;
         $node = ['id' => $nid, 'agent_type' => $typeId];
+        $extra = trim((string) ($rowExtra[$i] ?? ''));
+        if ($extra !== '') $node['extra_instructions'] = $extra;   // per-pipeline tweak
         $kt = deveryman_slug_id(trim((string) ($rowKick[$i] ?? '')));
         if ($kt !== null) {
             $node['kickback'] = ['target' => $kt,
@@ -154,7 +157,8 @@ if ($pre !== null) {
     $escNodes  = array_intersect_key($byId, $escIds);
     foreach (deveryman_flow_order(array_values($mainNodes), $sub($mainIds)) as $nid) {
         $n = $byId[$nid] ?? null; if ($n === null) continue;
-        $rows[] = ['type' => $n['agent_type'] ?? '', 'id' => $n['id'] ?? '', 'kick' => $n['kickback']['target'] ?? ''];
+        $rows[] = ['type' => $n['agent_type'] ?? '', 'id' => $n['id'] ?? '',
+                   'kick' => $n['kickback']['target'] ?? '', 'extra' => $n['extra_instructions'] ?? ''];
         if (!empty($n['kickback']['fail_threshold'])) $escThreshold = (int) $n['kickback']['fail_threshold'];
     }
     foreach (deveryman_flow_order(array_values($escNodes), $sub($escIds)) as $nid) {
@@ -196,6 +200,8 @@ for ($i = 0; $i < TEMPLATE_ROWS; $i++) {
     echo '</select> ';
     echo '<input type="text" name="node_id[' . $i . ']" value="' . fw_h((string) $curId) . '" placeholder="node id (optional)" style="width:27%"> ';
     echo '<input type="text" name="kickback[' . $i . ']" value="' . fw_h((string) $curKick) . '" placeholder="kickback to" style="width:27%">';
+    $curExtra = $rows[$i]['extra'] ?? '';
+    echo '<input type="text" name="node_extra[' . $i . ']" value="' . fw_h((string) $curExtra) . '" placeholder="extra instructions for this pipeline (optional)" style="width:100%;margin-top:6px">';
     echo '</div>';
 }
 

@@ -57,7 +57,9 @@ class Project:
         self.autonomy = int(self.cfg.get("autonomy_level", 3))
         self.poll     = int(self.cfg.get("poll_interval", 30))
         self.stages   = self.cfg["stages"]
-        self.kickback = self.cfg.get("kickback_target", {})
+        # `or {}`: an empty map serializes from PHP as [] (a list), so coerce it back
+        # to a dict. Same below for io / escalation.
+        self.kickback = self.cfg.get("kickback_target", {}) or {}
         # Safeguard 6: per-feature kickback budget. Once a feature is kicked back this
         # many times it is quarantined and escalated, so a custom graph cannot loop
         # (e.g. dev <-> reviewer) forever.
@@ -74,15 +76,15 @@ class Project:
         # to {"reads": [...], "writes": [...]}, paths relative to the docs dir. The
         # daemon injects these to each agent via a read-only pipeline-instructions.md
         # overlay; the reusable agent CLAUDE.md is never edited.
-        self.io = self.cfg.get("io", {})
+        self.io = self.cfg.get("io", {}) or {}
         self.pipeline_version = str(self.cfg.get("pipeline_version", "1"))
         # Escalation chain: a second, opt-in chain of stages a feature is routed onto
         # when it fails too many times at the same spot (rather than being quarantined
         # straight away). `escalation` maps a stage -> {"target": <chain head>,
         # "threshold": N}; `escalation_stages` is that chain's ordered stage list.
         # Empty for a plain pipeline, so nothing changes for existing projects.
-        self.escalation = self.cfg.get("escalation", {})
-        self.escalation_stages = self.cfg.get("escalation_stages", [])
+        self.escalation = self.cfg.get("escalation", {}) or {}
+        self.escalation_stages = self.cfg.get("escalation_stages", []) or []
 
     # derived paths
     @property
@@ -588,6 +590,11 @@ def write_pipeline_instructions(p: "Project", stage: str, feature: str):
     lines += ["", "## Signal done", f"- update {p.state_file}: **Stage status:** COMPLETE"]
     if kb:
         lines.append(f"- if you cannot proceed: **Stage status:** KICKED BACK (routes to '{kb}')")
+    # A per-pipeline tweak to this stage's role, appended to the overlay for this
+    # pipeline only (the reusable CLAUDE.md is never edited).
+    extra = (p.io.get(stage, {}).get("instructions") or "").strip()
+    if extra:
+        lines += ["", "## Extra instructions (this pipeline)", extra]
     lines += ["", f"Stay inside this project: only read or write under {p.repo} and {p.root}."]
     overlay.write_text("\n".join(lines) + "\n")
 

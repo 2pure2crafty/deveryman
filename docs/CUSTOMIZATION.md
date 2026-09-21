@@ -100,14 +100,19 @@ does it escalate to a human.
   escalation node"; the exclamation mark sits on the kickback until its criteria are
   filled.
 
-### 7. Per-pipeline agent tweaks
-A predefined agent type pulled into a pipeline may need a small tweak for that one
-pipeline (extra instructions), without forking the whole library.
-- Option A: per-node "extra instructions" appended to that pipeline's read-only
-  `pipeline-instructions.md` overlay; the library type is untouched.
-- Option B: "customize and save as a new agent type" (fork into a new library entry).
-- OPEN: A, B, or both (inline tweak by default, with a "save as new type" button).
-  (Asked.)
+### 7. Per-pipeline agent tweaks [BUILT: both]
+A predefined agent type pulled into a pipeline can be tweaked for that one pipeline
+without forking the whole library, or forked when the tweak is worth keeping.
+- [x] Inline: a node carries `extra_instructions`; compile attaches it to that
+  stage's `io` entry, and the daemon appends it to the read-only
+  `pipeline-instructions.md` overlay under "Extra instructions (this pipeline)". The
+  library agent type is never touched. Form: a per-row field in the template editor.
+- [x] Save as new: every type in the agent-type library has a "Clone into a new
+  type" link (`new-agent-type.php?from=<id>`), which prefills the editor (a builtin's
+  role text lands in free-form) and forces a new name, so you fork it into a new
+  library entry.
+- Note: the agent-type editor now saves `kickback_doc` (the doc a type leaves), not a
+  kickback target, matching "kickbacks are wired per pipeline".
 
 ### Kickback contract (for the visual builder)
 Every review/test agent CAN kick back (it advertises a `kickback_doc`), but nothing

@@ -359,6 +359,9 @@ function deveryman_resolve_node(array $node, array $agentTypes): ?array {
         'reads'       => $node['reads']       ?? $type['reads']       ?? [],
         'writes'      => $node['writes']      ?? $type['writes']      ?? [],
         'done_signal' => $node['done_signal'] ?? $type['done_signal'] ?? '',
+        // A per-pipeline tweak: extra instructions appended to this node's read-only
+        // overlay for this pipeline only; the library agent type is untouched.
+        'instructions' => (string) ($node['extra_instructions'] ?? ''),
         // Kickback routing is wired on the node (per pipeline), never inherited from
         // the type. The type only advertises the doc it leaves (kickback_doc). The
         // kickback may also carry escalation_target + fail_threshold: after that many
@@ -431,6 +434,9 @@ function deveryman_compile_template(array $tpl): ?array {
         $n = $byId[$id] ?? null;
         if ($n === null) continue;
         $io[$id] = ['reads' => array_values($n['reads']), 'writes' => array_values($n['writes'])];
+        // Only attach per-pipeline instructions when present, so a plain node's io
+        // entry keeps its exact {reads, writes} shape.
+        if (!empty($n['instructions'])) $io[$id]['instructions'] = $n['instructions'];
         if (!empty($n['kickback']['target'])) $kickback[$id] = $n['kickback']['target'];
         if (!empty($n['kickback']['escalation_target'])) {
             $escalation[$id] = [
