@@ -58,9 +58,24 @@ escalation chain a row above, tag branches on their own rows between the fork an
 merge). Gates trail after the merge. Nodes stay draggable; layout is just the initial
 placement.
 
-## Save (later milestone)
+## Editing + save (built)
 
-Editing writes back the `pipeline_template` JSON to `deveryman_save_pipeline_template`
-via a POST endpoint that re-runs `deveryman_validate_template` server-side. The canvas
-never writes the daemon config directly; it only ever produces the template we already
-compile. This milestone is the render; interactive editing + save comes next.
+The builder is editable:
+- **Forward flow** is wired by dragging between the in/out ports (native litegraph
+  links). Fan-in (several branches into one merge) is handled by auto-growing input
+  slots, so a node can receive many flow edges.
+- **Add node** from the palette (any agent type); **delete** the selected node.
+- The **properties panel** edits the selected node: id, chain (main/escalation), the
+  tag it is reached by (branch guard, from the vocabulary), the tagger flag, kickback
+  target + doc, escalation target + threshold, and per-pipeline extra instructions.
+  Kickback/escalation/tag are node properties drawn as overlays, not hand-wired.
+- The **pipeline panel** edits name, branches, backlog, deployment note, autonomy.
+- **Node positions are saved** (`pos` on each template node) so a layout persists.
+
+**Save** serialises the graph to the `pipeline_template` JSON and POSTs it to
+`pipeline-save.php`, which re-runs `deveryman_validate_template` server-side and only
+then writes it via `deveryman_save_pipeline_template`. The canvas never writes the
+daemon config directly; it only produces the template we already compile, and the
+server is the authority (a bad graph is rejected with the same errors the form editor
+shows). Verified end to end: a crafted save round-trips (positions + kickback), and an
+invalid graph and a missing CSRF token are both rejected.

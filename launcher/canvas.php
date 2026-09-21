@@ -40,6 +40,9 @@ function deveryman_canvas_model(string $tplId): ?array {
             'reads' => array_values($r['reads']),
             'writes' => array_values($r['writes']),
             'kickback' => $r['kickback'],
+            'extra_instructions' => $n['extra_instructions'] ?? '',
+            'branch_tag' => '',   // filled from the incoming guarded edge below
+            'pos' => (isset($n['pos']) && is_array($n['pos'])) ? $n['pos'] : null,
             'is_tagger' => ($tpl['tag_stage'] ?? '') === $r['id'],
         ];
     }
@@ -48,6 +51,15 @@ function deveryman_canvas_model(string $tplId): ?array {
     foreach ($tpl['flow'] ?? [] as $e) {
         if (empty($e['from']) || empty($e['to'])) continue;
         $flow[] = ['from' => $e['from'], 'to' => $e['to'], 'when' => $e['when'] ?? null];
+    }
+    // A node's branch tag is the guard on its incoming flow edge (edited per node in
+    // the builder; on save it becomes the edge guard again).
+    $byNodeId = [];
+    foreach ($nodes as $k => $nn) $byNodeId[$nn['id']] = $k;
+    foreach ($flow as $e) {
+        if (!empty($e['when']['tag']) && isset($byNodeId[$e['to']])) {
+            $nodes[$byNodeId[$e['to']]]['branch_tag'] = $e['when']['tag'];
+        }
     }
 
     // Synthesize the product feeder at the front if the template feeds from a backlog
@@ -63,7 +75,9 @@ function deveryman_canvas_model(string $tplId): ?array {
             'id' => 'product', 'label' => 'Product', 'agent_type' => 'product',
             'kind' => 'feeder', 'chain' => 'main',
             'reads' => [$backlog], 'writes' => ['build-queue.md'],
-            'kickback' => null, 'is_tagger' => ($tpl['tag_stage'] ?? '') === 'product',
+            'kickback' => null, 'extra_instructions' => '', 'branch_tag' => '', 'pos' => null,
+            'is_tagger' => ($tpl['tag_stage'] ?? '') === 'product',
+            'synthetic' => true,   // a view-only feeder; not persisted on save
         ]);
         $flow[] = ['from' => 'product', 'to' => $head, 'when' => null];
     }
@@ -71,14 +85,42 @@ function deveryman_canvas_model(string $tplId): ?array {
     $merge = [];
     foreach ($nodes as $n) if ($n['kind'] === 'merge') $merge[] = $n['id'];
 
+    $b = $tpl['branching'] ?? [];
     return [
         'id' => $tplId,
         'label' => $tpl['label'] ?? $tplId,
+        'source' => $tpl['source'] ?? 'user',
         'tag_stage' => $tpl['tag_stage'] ?? '',
         'backlog_file' => $backlog,
         'nodes' => $nodes,
         'flow' => $flow,
         'gates' => array_values($tpl['gates'] ?? []),
         'merge_stages' => $merge,
+        'meta' => [
+            'base_branch' => $b['base_branch'] ?? 'staging',
+            'release_branch' => $b['release_branch'] ?? 'main',
+            'feature_branch_prefix' => $b['feature_branch_prefix'] ?? 'feature/',
+            'deployment_note' => $tpl['deployment_note'] ?? 'dev-inbox/deployment-note.md',
+            'autonomy_level' => (int) ($tpl['autonomy_level'] ?? 3),
+            'poll_interval' => (int) ($tpl['poll_interval'] ?? 30),
+            'conductor' => (bool) ($tpl['conductor'] ?? false),
+            'conductor_agents' => $tpl['conductor_agents'] ?? [],
+        ],
     ];
+}
+
+/** Agent types for the builder palette (add-node menu): id, label, kind, I/O. */
+function deveryman_canvas_palette(): array {
+    $out = [];
+    foreach (deveryman_agent_types() as $id => $t) {
+        $out[] = [
+            'id' => $id,
+            'label' => $t['label'] ?? $id,
+            'kind' => $t['kind'] ?? 'stage',
+            'reads' => array_values($t['reads'] ?? []),
+            'writes' => array_values($t['writes'] ?? []),
+            'kickback_doc' => $t['kickback_doc'] ?? null,
+        ];
+    }
+    return $out;
 }
