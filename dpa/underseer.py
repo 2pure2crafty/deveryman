@@ -89,6 +89,10 @@ class Project:
         # routing). When set, next_stage routes along these edges by the feature's tag
         # instead of walking the linear `stages` index. Empty -> the plain linear walk.
         self.flow = self.cfg.get("flow", []) or []
+        # Merge nodes: the deterministic rejoin/end where the daemon merges the feature
+        # branch into base. When present, they own the merge (the implicit end-merge is
+        # disabled); when absent, the pipeline still auto-merges at its end as before.
+        self.merge_stages = self.cfg.get("merge_stages", []) or []
 
     # derived paths
     @property
@@ -959,9 +963,12 @@ def handle(p: "Project", state: dict, items: list):
             write_state(p, {"stage_status": "BLOCKED", "waiting_for": "OPERATOR"})
             log(p, f"Unrouted after {stage}: tag '{state.get('current_tag','')}' matched no edge")
             return
-        if nxt is None:
-            # End of pipeline: merge the feature back into the base branch, then
-            # the queue continues on a fresh branch cut from the updated base.
+        # Finish via a merge when advancing into an explicit merge node, or (for a
+        # pipeline without one) at the end of the chain. An explicit merge node owns
+        # the merge, so the implicit end-merge is disabled when merge_stages exist.
+        if (nxt in p.merge_stages) or (nxt is None and not p.merge_stages):
+            # Merge the feature branch back into base; the queue then continues on a
+            # fresh branch cut from the updated base.
             kill_agent(p, stage)
             status_m, msg = merge_feature_to_base(p, branch)
             if status_m == "merged":
@@ -977,6 +984,16 @@ def handle(p: "Project", state: dict, items: list):
                 escalate(p, f"Could not merge '{feature}' into {p.base_branch}", msg)
                 write_state(p, {"stage_status": "BLOCKED", "waiting_for": "OPERATOR"})
                 log(p, f"Feature '{feature}' merge {status_m}: {msg}")
+            return
+        if nxt is None:
+            # End reached but a merge node exists and was not traversed (a misrouted
+            # branch): finish without a second merge and log, rather than merge twice.
+            kill_agent(p, stage)
+            mark_active_feature("COMPLETE")
+            write_state(p, {"current_stage": "none", "stage_status": "IDLE",
+                            "current_feature": "none", "current_feature_id": "",
+                            "current_branch": "none", "waiting_for": "none"})
+            log(p, f"Feature '{feature}' reached an end with no merge node traversed; finished without merging")
             return
         if p.autonomy >= 3:
             # Safeguard 3: do not advance into a stage whose declared inputs are

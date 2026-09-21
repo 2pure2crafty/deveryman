@@ -124,6 +124,15 @@ function deveryman_agent_type_seed(): array {
             'reads' => ['dev-inbox/build-phase.md'], 'writes' => [],
             'done_signal' => $sig, 'kickback_doc' => 'dev-inbox/ux-fixes.md', 'source' => 'builtin',
         ],
+        'merge' => [
+            // A deterministic rejoin/end: the daemon merges the feature branch into
+            // base here (no agent is spawned), so branches converge at one clear node
+            // and no stage implicitly owns the merge.
+            'label' => 'Merge', 'kind' => 'merge', 'role' => ['ref' => 'dpa/merge'],
+            'reads' => [], 'writes' => [],
+            'done_signal' => 'daemon merges the feature branch into base (deterministic)',
+            'kickback_doc' => null, 'source' => 'builtin',
+        ],
         'deploy' => [
             'label' => 'Deploy', 'kind' => 'gate', 'role' => ['ref' => 'dpa/deploy'],
             'reads' => ['dev-inbox/deployment-note.md'], 'writes' => ['deploy-log/report.md'],
@@ -265,9 +274,14 @@ function deveryman_pipeline_template_seed(): array {
                     'kickback' => ['target' => 'dev', 'doc' => 'dev-inbox/reviewer-feedback.md']],
                 ['id' => 'ux-ui', 'agent_type' => 'ux-ui',
                     'kickback' => ['target' => 'dev', 'doc' => 'dev-inbox/ux-fixes.md']],
+                ['id' => 'merge', 'agent_type' => 'merge'],
                 ['id' => 'deploy', 'agent_type' => 'deploy'],
                 ['id' => 'testing-live', 'agent_type' => 'testing-live'],
             ],
+            // The automated pipeline ends at `merge` (the daemon merges into base
+            // there). deploy + testing-live are human-gated and reached by operator
+            // actions, not this flow; the merge->deploy->testing-live edges document
+            // the gate sequence for the graph and are never auto-traversed.
             'flow' => [
                 ['from' => 'features', 'to' => 'acceptance'],
                 ['from' => 'acceptance', 'to' => 'dev'],
@@ -275,7 +289,8 @@ function deveryman_pipeline_template_seed(): array {
                 ['from' => 'testing-staging', 'to' => 'integration-testing'],
                 ['from' => 'integration-testing', 'to' => 'reviewer'],
                 ['from' => 'reviewer', 'to' => 'ux-ui'],
-                ['from' => 'ux-ui', 'to' => 'deploy'],
+                ['from' => 'ux-ui', 'to' => 'merge'],
+                ['from' => 'merge', 'to' => 'deploy'],
                 ['from' => 'deploy', 'to' => 'testing-live'],
             ],
             'gates' => ['deploy', 'testing-live'], 'source' => 'builtin',
@@ -414,9 +429,11 @@ function deveryman_compile_template(array $tpl): ?array {
 
     // Order the main and escalation chains independently (each is its own linear
     // sub-flow), so escalation stages never fall into the normal forward walk.
-    $mainNodes = []; $escNodes = [];
+    $mainNodes = []; $escNodes = []; $mergeStages = [];
     foreach ($byId as $id => $n) {
-        if (($n['kind'] ?? 'stage') !== 'stage') continue;   // gates are not stages
+        $kind = $n['kind'] ?? 'stage';
+        if ($kind === 'merge') { $mergeStages[] = $id; continue; }
+        if ($kind !== 'stage') continue;   // gates are not stages
         if (($n['chain'] ?? 'main') === 'escalation') $escNodes[$id] = $n; else $mainNodes[$id] = $n;
     }
     $subFlow = function (array $nodes) use ($flow): array {
@@ -457,6 +474,9 @@ function deveryman_compile_template(array $tpl): ?array {
         if (!empty($e['when'])) { $edge['when'] = $e['when']; $hasGuard = true; }
         $flowOut[] = $edge;
     }
+    // A merge node also needs the flow graph (it is reached along an edge, not by the
+    // linear index walk), so emit flow whenever the pipeline branches OR has a merge.
+    $emitFlow = $hasGuard || (bool) $mergeStages;
 
     $b = $tpl['branching'] ?? [];
     $out = [
@@ -476,7 +496,8 @@ function deveryman_compile_template(array $tpl): ?array {
     // pipeline (like DPA standard) compiles to exactly the config it did before.
     if ($escalationStages) $out['escalation_stages'] = $escalationStages;
     if ($escalation) $out['escalation'] = $escalation;
-    if ($hasGuard) $out['flow'] = $flowOut;
+    if ($mergeStages) $out['merge_stages'] = $mergeStages;
+    if ($emitFlow) $out['flow'] = $flowOut;
     return $out;
 }
 

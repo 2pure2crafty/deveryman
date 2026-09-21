@@ -130,10 +130,13 @@ single **merge node**. Still exclusive (one path per feature), so it keeps the
   the edges out of a node, preferring a tag-matching guard, then a guardless default;
   a fork that matches no route (and has no default) is caught and escalated, never
   silently ended.
-- [ ] Merge node: a dedicated, deterministic merge stage the daemon runs at the
-  rejoin (reusing merge_feature_to_base; escalates on conflict, never force-merges),
-  so ux-ui stops implicitly owning the merge and the graph has one clear end. DPA
-  standard grows a merge node at its tail. (Building next.)
+- [x] Merge node: a dedicated `merge` agent type (kind `merge`) the daemon runs
+  deterministically at the rejoin (reusing `merge_feature_to_base`: no-ff, escalates
+  on conflict, never force-merges), so no stage implicitly owns the merge and the
+  graph has one clear end. When a merge node exists it owns the merge (the implicit
+  end-merge is disabled); without one, the pipeline still auto-merges at its end.
+  DPA standard now ends `ux-ui -> merge`. Verified end to end: a real feature branch
+  is merged into base at the merge node and the feature finishes.
 - [ ] Form editor: a "Branch chains (by tag)" section + a merge stage, wiring the
   shared front -> per-tag branches -> merge. The full free-form branching is the
   visual builder's job.
