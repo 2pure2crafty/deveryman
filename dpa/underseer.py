@@ -66,6 +66,12 @@ class Project:
         # deploy agent follows, and an optional production label for verification.
         self.deployment_note = self.cfg.get("deployment_note", "dev-inbox/deployment-note.md")
         self.production_ref  = self.cfg.get("production_ref", "")
+        # Per-stage I/O wiring (the compiled pipeline connections): a stage id maps
+        # to {"reads": [...], "writes": [...]}, paths relative to the docs dir. The
+        # daemon injects these to each agent via a read-only pipeline-instructions.md
+        # overlay; the reusable agent CLAUDE.md is never edited.
+        self.io = self.cfg.get("io", {})
+        self.pipeline_version = str(self.cfg.get("pipeline_version", "1"))
 
     # derived paths
     @property
@@ -134,7 +140,11 @@ def materialize_agent(p: "Project", name: str):
             f"Read({p.root}/**)", f"Write({p.root}/**)",
             "Bash(git *)", "Bash(ls *)", "Bash(cat *)", "Bash(grep *)",
             "Bash(find *)", "Bash(mkdir *)", "Bash(node *)", "Bash(npm *)",
-        ], "deny": []}
+        ], "deny": [
+            # The pipeline overlay is authoritative and underseer-owned: the agent
+            # reads it but never rewrites its own instructions.
+            f"Write({adir}/pipeline-instructions.md)",
+        ]}
     }, indent=2))
 
 
@@ -465,6 +475,50 @@ def session_alive(p: "Project", stage: str) -> bool:
     return _tmux("has-session", "-t", p.tmux(stage)).returncode == 0
 
 
+def _feature_slug(feature: str) -> str:
+    return re.sub(r'[^a-z0-9]+', '-', feature.lower()).strip('-')[:40].strip('-')
+
+
+def stage_io(p: "Project", stage: str, feature: str) -> tuple[list, list]:
+    """Resolve a stage's declared file reads/writes to absolute paths under the docs
+    dir, substituting the feature slug for `<slug>`. Non-file inputs (the branch,
+    the queue item) are simply not declared, so they never appear here. Returns
+    (reads, writes) as lists of Path."""
+    slug = _feature_slug(feature)
+    io = p.io.get(stage, {})
+    resolve = lambda paths: [p.docs / str(x).replace("<slug>", slug) for x in paths]
+    return resolve(io.get("reads", [])), resolve(io.get("writes", []))
+
+
+def write_pipeline_instructions(p: "Project", stage: str, feature: str):
+    """Write the authoritative, read-only pipeline overlay into the agent's dir. It
+    binds this stage's inputs/outputs/done-signal for this run and OVERRIDES any
+    default file names in the reusable CLAUDE.md (which is never edited). Removes a
+    stale overlay if the stage declares no wiring."""
+    overlay = p.agent_dir(stage) / "pipeline-instructions.md"
+    if stage not in p.io:
+        if overlay.exists():
+            overlay.unlink()
+        return
+    reads, writes = stage_io(p, stage, feature)
+    kb = p.kickback.get(stage)
+    lines = [
+        "# Pipeline instructions (authoritative)", "",
+        "While you run in this pipeline, this file OVERRIDES any default file names in",
+        "your CLAUDE.md. Follow it for your inputs, your output(s), and how you signal done.",
+        "", f"Feature: {feature}", f"Pipeline version: {p.pipeline_version}", "",
+        "## Read (your inputs)",
+    ]
+    lines += [f"- {r}" for r in reads] or ["- (none as a file; your input is named in startup-context.md)"]
+    lines += ["", "## Write (your output, exactly these paths)"]
+    lines += [f"- {w}" for w in writes] or ["- (your work is code on the branch, not a doc file)"]
+    lines += ["", "## Signal done", f"- update {p.state_file}: **Stage status:** COMPLETE"]
+    if kb:
+        lines.append(f"- if you cannot proceed: **Stage status:** KICKED BACK (routes to '{kb}')")
+    lines += ["", f"Stay inside this project: only read or write under {p.repo} and {p.root}."]
+    overlay.write_text("\n".join(lines) + "\n")
+
+
 def write_startup_context(p: "Project", stage: str, feature: str, branch: str, note: str = ""):
     adir = p.agent_dir(stage)
     ctx = (
@@ -476,6 +530,9 @@ def write_startup_context(p: "Project", stage: str, feature: str, branch: str, n
         f"Repo: {p.repo}\n"
         f"Pipeline docs: {p.docs}\n\n"
         f"Read your CLAUDE.md (your role) and PROJECT.md (this project's context) first.\n"
+        f"If `pipeline-instructions.md` exists in your directory, read it: it is\n"
+        f"authoritative for your inputs, your output file(s), and how you signal done,\n"
+        f"and it overrides any default file names in your CLAUDE.md.\n"
         f"Work on the repo at {p.repo} on branch {branch}.\n"
         f"When your stage is done, write your outputs and set the pipeline state:\n"
         f"  - update {p.state_file}: **Stage status:** COMPLETE (or KICKED BACK with a reason)\n"
@@ -490,6 +547,7 @@ def start_agent(p: "Project", stage: str, feature: str, branch: str, note: str =
     session = p.tmux(stage)
     adir = str(p.agent_dir(stage))
     write_startup_context(p, stage, feature, branch, note)
+    write_pipeline_instructions(p, stage, feature)
     _tmux("kill-session", "-t", session)
     time.sleep(1)
     r = _tmux("new-session", "-d", "-s", session, "-c", adir)
@@ -606,8 +664,7 @@ def next_stage(p: "Project", stage: str) -> str | None:
 
 def start_feature(p: "Project", item: dict):
     feature = item["feature"]
-    safe = re.sub(r'[^a-z0-9]+', '-', feature.lower()).strip('-')[:40].strip('-')
-    branch = f"{p.feature_prefix}{item['id']}-{safe}"
+    branch = f"{p.feature_prefix}{item['id']}-{_feature_slug(feature)}"
     # Ensure the base branch exists, then cut the feature branch FROM it (not from
     # whatever happens to be checked out), so every feature starts from a known base.
     ok, msg = ensure_base_branch(p)

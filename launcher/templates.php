@@ -51,6 +51,20 @@ function deveryman_templates(): array {
                 'feature_branch_prefix' => 'feature/',
                 'backlog_file' => 'product-backlog.md',
                 'deployment_note' => 'dev-inbox/deployment-note.md',
+                'pipeline_version' => '1',
+                // Per-stage file wiring (doc-relative; <slug> = the feature slug).
+                // The daemon injects these as a read-only pipeline-instructions.md
+                // overlay and pre/post-checks the declared files. Stages whose work
+                // is code on the branch (dev, testing, review) declare no doc output.
+                'io' => [
+                    'features'            => ['reads' => [], 'writes' => ['dev-inbox/build-phase.md']],
+                    'acceptance'          => ['reads' => ['dev-inbox/build-phase.md'], 'writes' => ['acceptance/<slug>-criteria.md']],
+                    'dev'                 => ['reads' => ['dev-inbox/build-phase.md'], 'writes' => []],
+                    'testing-staging'     => ['reads' => ['acceptance/<slug>-criteria.md', 'dev-inbox/build-phase.md'], 'writes' => []],
+                    'integration-testing' => ['reads' => ['dev-inbox/build-phase.md'], 'writes' => []],
+                    'reviewer'            => ['reads' => ['dev-inbox/build-phase.md'], 'writes' => []],
+                    'ux-ui'               => ['reads' => ['dev-inbox/build-phase.md'], 'writes' => []],
+                ],
             ],
         ],
     ];

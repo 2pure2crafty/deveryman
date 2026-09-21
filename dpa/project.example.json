@@ -15,6 +15,12 @@
   "poll_interval": 30,
   "stages": ["features", "dev", "reviewer"],
   "kickback_target": { "reviewer": "features" },
+  "pipeline_version": "1",
+  "io": {
+    "features": { "reads": [], "writes": ["dev-inbox/build-phase.md"] },
+    "dev": { "reads": ["dev-inbox/build-phase.md"], "writes": [] },
+    "reviewer": { "reads": ["dev-inbox/build-phase.md"], "writes": [] }
+  },
   "context": {
     "project_summary": "A small example project used to prove the multi-project DPA end to end.",
     "tech_stack": "Node.js. Keep changes minimal and self-contained.",
