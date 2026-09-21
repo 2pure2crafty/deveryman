@@ -93,33 +93,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         unset($n);
     }
 
-    // Optional tag branches: after the shared front, fork by feature tag onto branch
-    // chains that rejoin at the merge node. Each block is a tag + its own rows.
-    $brTags  = $_POST['branch_tag'] ?? [];
-    $brTypes = $_POST['branch_type'] ?? [];
-    $brIds   = $_POST['branch_id'] ?? [];
-    $brKick  = $_POST['branch_kick'] ?? [];
+    // Tag branching is OFF unless explicitly enabled; enabling it requires a tagger
+    // stage (the node that classifies each work order and assigns its tag). Branch
+    // tags are chosen from the vocabulary, or added inline (which registers them).
+    $branchingOn = ($_POST['branching_on'] ?? '') === '1';
+    $tagStage = '';
     $branches = [];   // each: ['tag'=>, 'head'=>, 'tail'=>]
-    foreach ($brTags as $b => $tagRaw) {
-        $tag = trim((string) $tagRaw);
-        $rows = $brTypes[$b] ?? [];
-        $head = null; $bprev = null;
-        foreach ($rows as $r => $typeId) {
-            $typeId = trim((string) $typeId);
-            if ($typeId === '' || !isset($types[$typeId])) continue;
-            $nid = deveryman_slug_id(trim((string) ($brIds[$b][$r] ?? ''))) ?? (($tag !== '' ? $tag : 'br') . '-' . $typeId);
-            $node = ['id' => $nid, 'agent_type' => $typeId];
-            $kt = deveryman_slug_id(trim((string) ($brKick[$b][$r] ?? '')));
-            if ($kt !== null) {
-                $node['kickback'] = ['target' => $kt,
-                    'doc' => $types[$typeId]['kickback_doc'] ?? ('dev-inbox/' . $nid . '-feedback.md')];
+    if ($branchingOn) {
+        $tagStage = deveryman_slug_id(trim((string) ($_POST['tag_stage'] ?? ''))) ?? '';
+        $brSelTag = $_POST['branch_tag'] ?? [];      // chosen from the vocabulary
+        $brNewTag = $_POST['branch_newtag'] ?? [];   // or a new tag typed inline
+        $brTypes  = $_POST['branch_type'] ?? [];
+        $brIds    = $_POST['branch_id'] ?? [];
+        $brKick   = $_POST['branch_kick'] ?? [];
+        foreach ($brTypes as $b => $rows) {
+            // Resolve the block's tag: an inline new tag wins (and is registered),
+            // otherwise the dropdown choice.
+            $newLabel = trim((string) ($brNewTag[$b] ?? ''));
+            $newId = deveryman_slug_id($newLabel);
+            if ($newId !== null) { deveryman_save_tag($newId, ['label' => $newLabel, 'description' => '']); $tag = $newId; }
+            else $tag = trim((string) ($brSelTag[$b] ?? ''));
+            $head = null; $bprev = null;
+            foreach ((array) $rows as $r => $typeId) {
+                $typeId = trim((string) $typeId);
+                if ($typeId === '' || !isset($types[$typeId])) continue;
+                $nid = deveryman_slug_id(trim((string) ($brIds[$b][$r] ?? ''))) ?? (($tag !== '' ? $tag : 'br') . '-' . $typeId);
+                $node = ['id' => $nid, 'agent_type' => $typeId];
+                $kt = deveryman_slug_id(trim((string) ($brKick[$b][$r] ?? '')));
+                if ($kt !== null) {
+                    $node['kickback'] = ['target' => $kt,
+                        'doc' => $types[$typeId]['kickback_doc'] ?? ('dev-inbox/' . $nid . '-feedback.md')];
+                }
+                $nodes[] = $node;
+                if ($head === null) $head = $nid;
+                if ($bprev !== null) $flow[] = ['from' => $bprev, 'to' => $nid];
+                $bprev = $nid;
             }
-            $nodes[] = $node;
-            if ($head === null) $head = $nid;
-            if ($bprev !== null) $flow[] = ['from' => $bprev, 'to' => $nid];
-            $bprev = $nid;
+            if ($head !== null) {
+                if ($tag === '') $errors[] = 'A branch has stages but no tag; pick or add one, or clear the branch.';
+                $branches[] = ['tag' => $tag, 'head' => $head, 'tail' => $bprev];
+            }
         }
-        if ($head !== null) $branches[] = ['tag' => $tag, 'head' => $head, 'tail' => $bprev];
+        if ($branches && $tagStage === '') {
+            $errors[] = 'Tag branching is on but no tagger stage is set. Name the stage (e.g. the first '
+                . 'one) that classifies each work order and writes its tag; without it, branches are dead.';
+        }
     }
 
     // Merge node: the rejoin/end. Wanted if any branch exists (they must rejoin) or
@@ -156,6 +174,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'nodes' => $nodes, 'flow' => $flow, 'gates' => $gates,
         'source' => 'user',
     ];
+    if ($branchingOn && $tagStage !== '') $tpl['tag_stage'] = $tagStage;
 
     // Validate the composed graph the same way the daemon will at load time.
     if (!$errors) $errors = array_merge($errors, deveryman_validate_template($tpl));
@@ -189,6 +208,7 @@ if ($pre !== null && ($pre['source'] ?? '') === 'builtin') {
 // Reconstruct the editor from a saved template: the shared front (guardless spine),
 // the escalation chain, the tag branches (guarded edges), and whether a merge exists.
 $rows = []; $escRows = []; $escThreshold = 0; $branchBlocks = []; $mergeChecked = ($pre === null);
+$tagStageVal = $pre['tag_stage'] ?? '';
 if ($pre !== null) {
     $flowAll = $pre['flow'] ?? [];
     $byId = [];
@@ -247,6 +267,7 @@ if ($pre !== null) {
         $escRows[] = ['type' => $n['agent_type'] ?? '', 'id' => $n['id'] ?? '', 'kick' => $n['kickback']['target'] ?? ''];
     }
 }
+$branchingOn = $tagStageVal !== '' || !empty($branchBlocks);
 $b = $pre['branching'] ?? [];
 $g = function (string $k, $d = '') use ($pre) { return $pre[$k] ?? $d; };
 
@@ -311,15 +332,39 @@ for ($i = 0; $i < $escRowCount; $i++) {
     echo '</div>';
 }
 
-echo '<h2>Branches by feature tag (optional)</h2>';
-echo '<p class="meta">Route a feature by its tag (the build-queue row\'s tag: ui / backend / bugfix / ...). '
-    . 'After the shared front above, a tagged feature forks onto its branch here, then all branches rejoin '
-    . 'at the merge stage. Untagged features go straight to merge. Leave empty for a single linear pipeline.</p>';
+echo '<h2>Tag branching (off by default)</h2>';
+echo '<div class="card" style="border-color:#5a4b1f;background:#25200f">';
+echo '<strong>Before you turn this on.</strong>';
+echo '<p class="desc">A single linear pipeline needs none of this. Turn on branching only if different '
+    . 'kinds of work order should take different paths (a UI change, a back-end change, a bug fix). If you do:</p>';
+echo '<ul class="desc" style="margin:6px 0 0 18px">';
+echo '<li>You must name a <strong>tagger stage</strong>: the stage (or the person filling the work order) '
+    . 'that classifies each item and writes its tag. The daemon hands that stage the allowed tags and it '
+    . 'sets one in the build-queue Tag column.</li>';
+echo '<li>Branches route on tags from the shared <a href="tags.php">vocabulary</a> (pick from the list, or '
+    . 'add one inline). No free-typed tags: a typo would be a dead branch.</li>';
+echo '<li>If a work order reaches a fork with a tag that matches no branch (or none at all), it takes the '
+    . 'default straight to merge if there is one, otherwise the daemon escalates it to you.</li>';
+echo '</ul>';
+$brOnAttr = $branchingOn ? ' checked' : '';
+echo '<label style="margin-top:10px"><input type="checkbox" name="branching_on" value="1" style="width:auto"' . $brOnAttr . '> '
+    . 'Enable tag branching (I understand the above)</label>';
+echo '<label>Tagger stage (node id that sets each work order\'s tag) '
+    . '<input type="text" name="tag_stage" value="' . fw_h((string) $tagStageVal) . '" placeholder="e.g. features"></label>';
+echo '</div>';
+
+$allTags = deveryman_tags();
 $branchCount = 3; $branchRowCount = 3;
 for ($bk = 0; $bk < $branchCount; $bk++) {
     $blk = $branchBlocks[$bk] ?? ['tag' => '', 'rows' => []];
     echo '<div class="card" style="padding:8px">';
-    echo '<label style="margin-top:0">Branch tag <input type="text" name="branch_tag[' . $bk . ']" value="' . fw_h((string) $blk['tag']) . '" placeholder="e.g. ui"></label>';
+    echo '<div>Branch tag: <select name="branch_tag[' . $bk . ']" style="width:45%"><option value="">(none)</option>';
+    foreach ($allTags as $tid => $t) {
+        $sel = ($tid === $blk['tag']) ? ' selected' : '';
+        echo '<option value="' . fw_h($tid) . '"' . $sel . '>' . fw_h(($t['label'] ?? $tid) . ' (' . $tid . ')') . '</option>';
+    }
+    echo '</select> ';
+    echo '<input type="text" name="branch_newtag[' . $bk . ']" value="" placeholder="or add a new tag" style="width:45%"></div>';
     for ($r = 0; $r < $branchRowCount; $r++) {
         $curType = $blk['rows'][$r]['type'] ?? '';
         $curId   = $blk['rows'][$r]['id'] ?? '';

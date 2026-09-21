@@ -143,9 +143,20 @@ single **merge node**. Still exclusive (one path per feature), so it keeps the
   Edit reconstruction separates the front (guardless spine) from the branches
   (guarded edges) and detects the merge. Full free-form branching stays the visual
   builder's job.
-- Decider: the tag is set when the feature is created (the product/features agent
-  writes the build-queue row); a deterministic guard match keeps routing transparent.
-  An LLM router/classifier is a later upgrade.
+- [x] Controlled vocabulary + protection: tags come from one global registry
+  (`tags.json`, seeded ui/backend/bugfix, editor at `tags.php`), never free-typed.
+  Branching is OFF by default; the form gates it behind an "enable" acknowledgement
+  that explains the requirement and makes you name a **tagger stage**. `tag_stage` is
+  compiled into the config and the daemon hands that stage the allowed-tag menu in its
+  overlay ("set the tag to exactly one of ..."), reading the tag live from the row.
+  `validate_template` refuses a branching pipeline with no tagger or with a guard tag
+  outside the vocabulary; at run time an unroutable feature escalates. Route tags are
+  chosen from a dropdown, or added inline (which registers them).
+- Decider: the tagger stage (or a human filling the work order) sets the tag; a
+  deterministic guard match keeps routing transparent. An LLM router/classifier is a
+  later upgrade.
+- [ ] Agent side (next): the product/features role writes the Tag column from the
+  overlay menu, and the build-queue format documents the optional Tag column.
 
 ### Kickback contract (for the visual builder)
 Every review/test agent CAN kick back (it advertises a `kickback_doc`), but nothing
