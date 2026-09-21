@@ -144,10 +144,10 @@ def instantiate(p: "Project"):
     (p.docs / "dev-inbox").mkdir(exist_ok=True)
     for stage in p.stages:
         materialize_agent(p, stage)
-    # Front-of-pipeline helpers that are not pipeline stages: the product feeder
-    # and the human-run ideas agent. Materialize them if a template exists so the
-    # feeder and the dashboard's "Start ideas" can find a ready workspace.
-    for aux in ("product", "ideas", "deploy", "testing-live"):
+    # Helpers that are not pipeline stages: the product feeder and the back-end
+    # deploy/verify agents. Materialize them if a template exists. (Brainstorming is
+    # a Conductor agent, not a DPA one, so ideas is not materialized here.)
+    for aux in ("product", "deploy", "testing-live"):
         if aux not in p.stages and (AGENT_TEMPLATES / aux / "CLAUDE.md").exists():
             materialize_agent(p, aux)
     if not (p.docs / p.backlog_file).exists():
@@ -442,20 +442,6 @@ def run_deploy_agent(p: "Project") -> tuple[str, str]:
     start_agent(p, "deploy", "(deploy to production)", p.release_branch, startnote)
     log(p, "Started deploy agent")
     return ("started", "deploy agent launched")
-
-
-def run_ideas_agent(p: "Project") -> tuple[str, str]:
-    """Launch the human-run ideas agent (a brainstorm session). Front-of-pipeline;
-    the operator drives it. It appends approved ideas to the backlog."""
-    materialize_agent(p, "ideas")
-    note = (
-        f"You are the ideas agent, a human-run brainstorming partner. Read PROJECT.md, "
-        f"think through ideas with the operator, and append the ideas they approve to "
-        f"{p.docs / p.backlog_file} as QUEUED rows for the product feeder."
-    )
-    start_agent(p, "ideas", "(brainstorm)", "none", note)
-    log(p, "Started ideas agent")
-    return ("started", "ideas agent launched")
 
 
 def run_testing_live_agent(p: "Project") -> tuple[str, str]:
@@ -786,14 +772,14 @@ OPERATOR_ACTIONS = {
     "--deploy":      lambda p: run_deploy_agent(p),
     "--verify":      lambda p: run_testing_live_agent(p),
     "--run-product": lambda p: start_product_feeder(p),
-    "--start-ideas": lambda p: run_ideas_agent(p),
+    "--instantiate": lambda p: ("ok", "instantiated"),
 }
 
 
 def main():
     if len(sys.argv) < 2:
         print("usage: underseer.py /path/to/project.json "
-              "[--promote|--deploy|--verify|--run-product|--start-ideas]", file=sys.stderr)
+              "[--promote|--deploy|--verify|--run-product|--instantiate]", file=sys.stderr)
         sys.exit(1)
     try:
         p = Project(sys.argv[1])

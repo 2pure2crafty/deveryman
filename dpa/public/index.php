@@ -73,7 +73,6 @@ echo '<div class="card"><div class="meta">These steps are always yours to trigge
     . 'never runs them itself, at any autonomy level. Readiness: ' . (int)$backlog . ' backlog item(s) '
     . 'queued; ' . fw_h($base) . ' is ahead of ' . fw_h($rel) . ' by ' . (int)$ahead . ' commit(s).</div>';
 echo '<div style="margin-top:8px">';
-echo $ctl('start-ideas', 'Start ideas', '#444');
 if ($backlog > 0) echo $ctl('run-product', 'Run product feeder (' . (int)$backlog . ')', '#2563eb');
 if ($ahead > 0)   echo $ctl('promote', 'Promote ' . fw_h($base) . ' to ' . fw_h($rel) . ' (' . (int)$ahead . ')', '#7c3aed');
 echo $ctl('deploy', 'Deploy to production', '#b45309');

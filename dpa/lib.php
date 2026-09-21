@@ -65,7 +65,7 @@ function dpa_daemon_active(string $slug): bool {
     return trim($out) === 'active';
 }
 
-/* --- human-gate controls (promote / deploy / verify / feeder / ideas) -------- */
+/* --- human-gate controls (promote / deploy / verify / feeder) --------------- */
 
 /** Absolute path to the daemon script, invoked for the operator gate actions. */
 function dpa_underseer_path(): string {
@@ -79,7 +79,6 @@ function dpa_gate_actions(): array {
         'deploy'      => '--deploy',
         'verify'      => '--verify',
         'run-product' => '--run-product',
-        'start-ideas' => '--start-ideas',
     ];
 }
 
