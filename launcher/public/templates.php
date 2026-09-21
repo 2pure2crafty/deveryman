@@ -38,8 +38,11 @@ foreach (deveryman_pipeline_templates() as $id => $tpl) {
     }
     $gates = $tpl['gates'] ?? [];
     if ($gates) echo '<div class="meta">gates: ' . fw_h(implode(', ', $gates)) . '</div>';
-    echo '<div style="margin-top:8px"><a href="new-template.php?id=' . fw_h(rawurlencode($id)) . '">'
-        . ($isUser ? 'Edit' : 'Clone into a new template') . '</a></div>';
+    echo '<div style="margin-top:8px">';
+    echo '<a href="pipeline-builder.php?template=' . fw_h(rawurlencode($id)) . '">Open in builder</a>';
+    echo ' &nbsp;|&nbsp; <a href="new-template.php?id=' . fw_h(rawurlencode($id)) . '">'
+        . ($isUser ? 'Edit' : 'Clone into a new template') . '</a>';
+    echo '</div>';
     echo '</div>';
 }
 
