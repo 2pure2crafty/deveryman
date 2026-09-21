@@ -34,7 +34,8 @@ pipeline for that project.
 **Instantiation.** When a project enables the DPA, the daemon materializes a
 per-project pipeline workspace: for each stage, an agent dir containing the
 generic role CLAUDE.md plus a `PROJECT.md` with that project's context. The stage
-agent runs there and operates on the project's own repo (a cycle branch).
+agent runs there and operates on the project's own repo (a feature branch cut
+from the base branch).
 
 ```
 <project.pipeline_root>/
@@ -48,9 +49,75 @@ Nothing project-specific is baked into the daemon or the role templates; it all
 comes from the project config. Each real project becomes just another project
 config.
 
+## The end-to-end model
+
+The pipeline runs from a rough idea to a shipped, verified release. One boundary
+is deliberate: **the DPA automates the development middle; idea-generation at the
+front and deployment at the back are human-gated and never autonomous, at any
+autonomy level.** The daemon only signals that a gate is ready; it never crosses
+one itself.
+
+```
+ideas (human)  ->  product feeder  ->  build queue  ->  per-feature pipeline
+                                                        (features .. ux-ui)
+   ->  merge feature into base (staging)
+   ->  [human gate] promote base to release (main)
+   ->  [human gate] deploy release to production
+   ->  [human gate] verify production
+```
+
+**Front (human-initiated).**
+- `ideas` is a human-run brainstorm agent. It never starts on its own. Approved
+  ideas are appended to the backlog file (`backlog_file`, default
+  `product-backlog.md`) as QUEUED rows.
+- `product` is a feeder, not a pipeline stage. When the build queue has nothing
+  runnable and the backlog has QUEUED items, the daemon runs product to turn them
+  into build-queue features (only at the top autonomy level; below that it just
+  signals "run the product feeder?").
+
+**Middle (automated).** The stage list runs per feature as described above.
+
+**Back (human-gated).**
+- `deploy` and `testing-live` are generic templates; the actual deploy procedure
+  is project-specific and lives in the project's deployment note
+  (`deployment_note`), never guessed. Deploy refuses if no note exists.
+- The daemon signals when `base_branch` is ahead of `release_branch`, but promote,
+  deploy, and verify run only when the operator triggers them (the dashboard Gates
+  buttons, or `underseer.py <config> --promote|--deploy|--verify`).
+
+## Branching
+
+- **`base_branch`** (default `staging`): the long-lived integration branch. Each
+  feature is cut FROM it (`feature/<id>-<slug>`), and on passing the last stage the
+  feature is merged BACK into it (`--no-ff`) and the feature branch is deleted. The
+  daemon creates `base_branch` from the repo's default branch if it does not exist.
+- **`release_branch`** (default `main`): the promotion target. `promote` merges
+  `base_branch` into it (`--no-ff`), human-gated.
+- **Merge conflicts** (feature-into-base or base-into-release) abort cleanly
+  (`git merge --abort`, base/release left intact), escalate, and halt for the
+  operator. Never force, never `-X ours/theirs`.
+- **Single-branch repos**: set `base_branch == release_branch`; features still
+  merge into it and `promote` becomes a logged no-op.
+- All daemon git is local (no push/pull); a project that needs a push does it as
+  part of its deployment note, so the daemon stays remote-agnostic.
+
+## Config reference (project.json keys)
+
+Branching and gates, all with backward-compatible defaults:
+
+- `base_branch` (`"staging"`), `release_branch` (`"main"`), `feature_branch_prefix`
+  (`"feature/"`).
+- `backlog_file` (`"product-backlog.md"`): the front feeder's input.
+- `deployment_note` (`"dev-inbox/deployment-note.md"`, relative to docs): the
+  project's deploy procedure the deploy agent follows.
+- `production_ref` (`""`): optional production label/URL for verification.
+- `autonomy_level`: gates how far the development middle auto-advances (and, at the
+  top level, whether the product feeder auto-runs). It never gates the human-only
+  steps, which are always manual.
+
 ## Scope of the first cut
 
 Prove the mechanism on a fresh sandbox project: a generic, config-driven daemon
-drives the generic stage agents through a real (if tiny) feature, on the
-sandbox's own git branch. Then a real project migrates onto the same generic
-daemon by writing its own `project.json`.
+drives the generic stage agents through a real (if tiny) feature, cut from the
+base branch and merged back on completion. Then a real project migrates onto the
+same generic daemon by writing its own `project.json`.

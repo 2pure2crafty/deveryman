@@ -48,13 +48,24 @@ class Project:
         self.root    = Path(self.cfg.get("pipeline_root", str(self.repo / ".pipeline")))
         self.prefix  = self.cfg.get("tmux_prefix", "DPA")
         self.git_user = self.cfg.get("git_user")  # None or a sudo user
-        self.cycle_prefix   = self.cfg.get("cycle_branch_prefix", "autonomous/")
+        # Long-lived branches. Features are cut from base_branch and merged back
+        # into it; release_branch is the human-gated promotion target. A
+        # single-branch repo can set base_branch == release_branch.
+        self.base_branch    = self.cfg.get("base_branch", "staging")
+        self.release_branch = self.cfg.get("release_branch", "main")
         self.feature_prefix = self.cfg.get("feature_branch_prefix", "feature/")
         self.autonomy = int(self.cfg.get("autonomy_level", 3))
         self.poll     = int(self.cfg.get("poll_interval", 30))
         self.stages   = self.cfg["stages"]
         self.kickback = self.cfg.get("kickback_target", {})
         self.context  = self.cfg.get("context", {})
+        # Front feeder: rough ideas land here; the product agent turns QUEUED rows
+        # into build-queue features. Human-initiated (or auto only at top autonomy).
+        self.backlog_file = self.cfg.get("backlog_file", "product-backlog.md")
+        # Back gate: the project-provided deploy procedure (relative to docs) the
+        # deploy agent follows, and an optional production label for verification.
+        self.deployment_note = self.cfg.get("deployment_note", "dev-inbox/deployment-note.md")
+        self.production_ref  = self.cfg.get("production_ref", "")
 
     # derived paths
     @property
@@ -98,35 +109,55 @@ def project_md(p: "Project") -> str:
     )
 
 
+def materialize_agent(p: "Project", name: str):
+    """Materialize one agent workspace (CLAUDE.md role + PROJECT.md context +
+    wrap-up skill + settings) from the generic template for `name`."""
+    adir = p.agent_dir(name)
+    adir.mkdir(parents=True, exist_ok=True)
+    tmpl = AGENT_TEMPLATES / name / "CLAUDE.md"
+    if tmpl.exists():
+        shutil.copyfile(tmpl, adir / "CLAUDE.md")
+    else:
+        (adir / "CLAUDE.md").write_text(f"# {name.title()} agent\n\n(Generic template missing.)\n")
+    (adir / "PROJECT.md").write_text(project_md(p))
+    # give each agent the memory-kit wrap-up skill + write permission
+    skill_src = HERE / ".." / "shared" / "memory-kit" / "skills" / "wrap-up"
+    skdir = adir / ".claude" / "skills"
+    skdir.mkdir(parents=True, exist_ok=True)
+    if (skill_src / "SKILL.md").exists():
+        (skdir / "wrap-up").mkdir(exist_ok=True)
+        shutil.copyfile(skill_src / "SKILL.md", skdir / "wrap-up" / "SKILL.md")
+    settings = adir / ".claude" / "settings.json"
+    settings.write_text(json.dumps({
+        "permissions": {"allow": [
+            f"Read({p.repo}/**)", f"Write({p.repo}/**)",
+            f"Read({p.root}/**)", f"Write({p.root}/**)",
+            "Bash(git *)", "Bash(ls *)", "Bash(cat *)", "Bash(grep *)",
+            "Bash(find *)", "Bash(mkdir *)", "Bash(node *)", "Bash(npm *)",
+        ], "deny": []}
+    }, indent=2))
+
+
 def instantiate(p: "Project"):
     """Materialize the per-project pipeline workspace from the generic templates."""
     p.docs.mkdir(parents=True, exist_ok=True)
     (p.docs / "dev-inbox").mkdir(exist_ok=True)
     for stage in p.stages:
-        adir = p.agent_dir(stage)
-        adir.mkdir(parents=True, exist_ok=True)
-        tmpl = AGENT_TEMPLATES / stage / "CLAUDE.md"
-        if tmpl.exists():
-            shutil.copyfile(tmpl, adir / "CLAUDE.md")
-        else:
-            (adir / "CLAUDE.md").write_text(f"# {stage.title()} agent\n\n(Generic template missing.)\n")
-        (adir / "PROJECT.md").write_text(project_md(p))
-        # give each agent the memory-kit wrap-up skill + write permission
-        skill_src = HERE / ".." / "shared" / "memory-kit" / "skills" / "wrap-up"
-        skdir = adir / ".claude" / "skills"
-        skdir.mkdir(parents=True, exist_ok=True)
-        if (skill_src / "SKILL.md").exists():
-            (skdir / "wrap-up").mkdir(exist_ok=True)
-            shutil.copyfile(skill_src / "SKILL.md", skdir / "wrap-up" / "SKILL.md")
-        settings = adir / ".claude" / "settings.json"
-        settings.write_text(json.dumps({
-            "permissions": {"allow": [
-                f"Read({p.repo}/**)", f"Write({p.repo}/**)",
-                f"Read({p.root}/**)", f"Write({p.root}/**)",
-                "Bash(git *)", "Bash(ls *)", "Bash(cat *)", "Bash(grep *)",
-                "Bash(find *)", "Bash(mkdir *)", "Bash(node *)", "Bash(npm *)",
-            ], "deny": []}
-        }, indent=2))
+        materialize_agent(p, stage)
+    # Front-of-pipeline helpers that are not pipeline stages: the product feeder
+    # and the human-run ideas agent. Materialize them if a template exists so the
+    # feeder and the dashboard's "Start ideas" can find a ready workspace.
+    for aux in ("product", "ideas", "deploy", "testing-live"):
+        if aux not in p.stages and (AGENT_TEMPLATES / aux / "CLAUDE.md").exists():
+            materialize_agent(p, aux)
+    if not (p.docs / p.backlog_file).exists():
+        (p.docs / p.backlog_file).write_text(
+            "# Product backlog\n\n"
+            "Rough ideas land here (the ideas agent, or you). The product feeder turns\n"
+            "QUEUED rows into build-queue features and marks them PROCESSED.\n\n"
+            "| ID | Idea | Status | Source | Date |\n"
+            "| -- | ---- | ------ | ------ | ---- |\n"
+        )
     if not p.state_file.exists():
         p.state_file.write_text(
             "# Pipeline state\n\n"
@@ -134,7 +165,6 @@ def instantiate(p: "Project"):
             "**Stage status:** IDLE\n"
             "**Current feature:** none\n"
             "**Current feature id:** \n"
-            "**Current cycle:** none\n"
             "**Current branch:** none\n"
             "**Kick-back count:** 0\n"
             "**Waiting for:** none\n"
@@ -229,6 +259,43 @@ def next_queued(items: list) -> dict | None:
     return None
 
 
+def read_backlog(p: "Project") -> list:
+    """Parse the product backlog table (| ID | Idea | Status | Source | Date |)."""
+    items = []
+    f = p.docs / p.backlog_file
+    if not f.exists():
+        return items
+    for line in f.read_text().splitlines():
+        if not line.strip().startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 3 or cells[0].lower() in ("id", "--", "---"):
+            continue
+        if set(cells[0]) <= set("- "):
+            continue
+        items.append({"id": cells[0], "idea": cells[1], "status": cells[2]})
+    return items
+
+
+def count_backlog_queued(p: "Project") -> int:
+    return sum(1 for i in read_backlog(p) if i["status"].upper() == "QUEUED")
+
+
+def signal(p: "Project", msg: str):
+    """Write a non-blocking readiness notice to docs/signals.md. Unlike escalation,
+    a signal never halts anything; it just surfaces "you could do X now" for the
+    dashboard/operator. Deduped: the same message is written once until the
+    operator clears the file."""
+    sig = p.docs / "signals.md"
+    existing = sig.read_text() if sig.exists() else ""
+    if msg in existing:
+        return
+    stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    header = "" if existing else "# Signals (readiness prompts, non-blocking)\n\n"
+    sig.write_text((existing.rstrip() + "\n" if existing else header) + f"- [{stamp}] {msg}\n")
+    log(p, f"SIGNAL: {msg}")
+
+
 # --------------------------------------------------------------------------- #
 # Agent lifecycle
 # --------------------------------------------------------------------------- #
@@ -245,30 +312,180 @@ def _git(p: "Project", *args):
     return subprocess.run(base, capture_output=True, text=True)
 
 
-def checkout_branch(p: "Project", branch: str) -> tuple[bool, str]:
-    """Deterministically put the repo working tree on `branch`, creating it from
-    the current HEAD if it does not exist. The daemon owns branch isolation rather
-    than trusting each agent to create the branch itself; if this fails we do not
-    start the feature on the wrong branch. Returns (ok, message)."""
+def checkout_branch(p: "Project", branch: str, base: str | None = None) -> tuple[bool, str]:
+    """Deterministically put the repo working tree on `branch`. If it does not
+    exist, create it: from `base` when given (feature branches are cut from the
+    base branch), otherwise from the current HEAD. The daemon owns branch isolation
+    rather than trusting each agent to create the branch. Returns (ok, message)."""
     if _git(p, "rev-parse", "--verify", branch).returncode == 0:
         r = _git(p, "checkout", branch)
+    elif base is not None:
+        r = _git(p, "checkout", "-b", branch, base)
     else:
         r = _git(p, "checkout", "-b", branch)
     return (r.returncode == 0, (r.stderr or r.stdout).strip())
+
+
+def _default_branch(p: "Project") -> str:
+    """Best guess at the repo's default branch, used to seed base_branch."""
+    r = _git(p, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
+    if r.returncode == 0 and r.stdout.strip():
+        return r.stdout.strip().rsplit("/", 1)[-1]
+    for cand in ("main", "master"):
+        if _git(p, "rev-parse", "--verify", cand).returncode == 0:
+            return cand
+    r = _git(p, "rev-parse", "--abbrev-ref", "HEAD")
+    return r.stdout.strip() or "main"
+
+
+def ensure_base_branch(p: "Project") -> tuple[bool, str]:
+    """Make sure base_branch exists, creating it from the repo's default branch if
+    missing (a ref only, no working-tree change). Features are always cut from a
+    known base. Returns (ok, message)."""
+    if _git(p, "rev-parse", "--verify", p.base_branch).returncode == 0:
+        return (True, "exists")
+    src = _default_branch(p)
+    r = _git(p, "branch", p.base_branch, src)
+    if r.returncode != 0:
+        return (False, (r.stderr or r.stdout).strip())
+    log(p, f"Created base branch '{p.base_branch}' from '{src}'")
+    return (True, f"created from {src}")
+
+
+def merge_feature_to_base(p: "Project", feature_branch: str) -> tuple[str, str]:
+    """Merge a finished feature branch back into base_branch (no-ff), then delete
+    it. On conflict, abort cleanly so base stays intact, and report so the caller
+    can escalate; never force, never -X ours/theirs. Returns (status, message)
+    where status is one of 'merged', 'conflict', 'error'. All local (no push)."""
+    co = _git(p, "checkout", p.base_branch)
+    if co.returncode != 0:
+        return ("error", f"could not checkout {p.base_branch}: {(co.stderr or co.stdout).strip()}")
+    m = _git(p, "merge", "--no-ff", "--no-edit", feature_branch)
+    if m.returncode == 0:
+        d = _git(p, "branch", "-d", feature_branch)
+        note = "" if d.returncode == 0 else f" (branch not deleted: {(d.stderr or d.stdout).strip()})"
+        return ("merged", f"merged {feature_branch} into {p.base_branch}{note}")
+    # Merge failed: capture the conflicting files, then abort to keep base clean.
+    files = _git(p, "diff", "--name-only", "--diff-filter=U").stdout.strip()
+    _git(p, "merge", "--abort")
+    if files:
+        return ("conflict", f"merge conflict in: {files.replace(chr(10), ', ')}")
+    return ("error", f"merge failed: {(m.stderr or m.stdout).strip()}")
+
+
+def base_ahead_of_release(p: "Project") -> int:
+    """How many commits base_branch is ahead of release_branch (0 if equal, either
+    branch is missing, or nothing to promote). Read-only; local."""
+    if p.base_branch == p.release_branch:
+        return 0
+    for b in (p.base_branch, p.release_branch):
+        if _git(p, "rev-parse", "--verify", b).returncode != 0:
+            return 0
+    r = _git(p, "rev-list", "--count", f"{p.release_branch}..{p.base_branch}")
+    try:
+        return int(r.stdout.strip())
+    except ValueError:
+        return 0
+
+
+# --------------------------------------------------------------------------- #
+# Human-gated back-end operations (promote / deploy / verify)
+#
+# These are the deployment boundary. They are NEVER called from handle() at any
+# autonomy level; the daemon only signals readiness. They run only when the
+# operator invokes them (the dashboard's Gates buttons, or the CLI flags in
+# main()). Each is one deliberate, human-triggered action.
+# --------------------------------------------------------------------------- #
+
+def promote(p: "Project") -> tuple[str, str]:
+    """Human gate 1: merge base_branch into release_branch (no-ff). Conflict aborts
+    cleanly and escalates; never force. Single-branch repo -> logged no-op."""
+    if p.base_branch == p.release_branch:
+        log(p, "Promote is a no-op (base_branch == release_branch)")
+        return ("noop", "single-branch repo: base and release are the same")
+    if _git(p, "rev-parse", "--verify", p.release_branch).returncode != 0:
+        r = _git(p, "branch", p.release_branch, p.base_branch)
+        if r.returncode != 0:
+            return ("error", f"could not create {p.release_branch}: {(r.stderr or r.stdout).strip()}")
+        log(p, f"Created release branch '{p.release_branch}' from '{p.base_branch}'")
+        return ("promoted", f"created {p.release_branch} from {p.base_branch}")
+    co = _git(p, "checkout", p.release_branch)
+    if co.returncode != 0:
+        return ("error", f"could not checkout {p.release_branch}: {(co.stderr or co.stdout).strip()}")
+    m = _git(p, "merge", "--no-ff", "--no-edit", p.base_branch)
+    if m.returncode == 0:
+        log(p, f"Promoted {p.base_branch} into {p.release_branch}")
+        return ("promoted", f"merged {p.base_branch} into {p.release_branch}")
+    files = _git(p, "diff", "--name-only", "--diff-filter=U").stdout.strip()
+    _git(p, "merge", "--abort")
+    detail = f"merge conflict in: {files.replace(chr(10), ', ')}" if files else (m.stderr or m.stdout).strip()
+    escalate(p, f"Could not promote {p.base_branch} into {p.release_branch}", detail)
+    return ("conflict", detail)
+
+
+def run_deploy_agent(p: "Project") -> tuple[str, str]:
+    """Human gate 2: launch the deploy agent to ship release_branch to production,
+    following the project's deployment note. Refuses (signals) if no note exists;
+    the procedure is never guessed."""
+    materialize_agent(p, "deploy")
+    note = p.docs / p.deployment_note
+    if not note.exists():
+        signal(p, f"Deploy requested but no deployment procedure at {note}; add one first.")
+        log(p, "Deploy refused: no deployment note")
+        return ("refused", f"no deployment note at {note}")
+    startnote = (
+        f"You are the deploy agent, invoked by the operator. Read the deployment "
+        f"procedure at {note} and follow it EXACTLY to deploy the {p.release_branch} "
+        f"branch to production. Do not improvise. Snapshot before touching production, "
+        f"write a deploy report, and report PASS or FAIL."
+    )
+    start_agent(p, "deploy", "(deploy to production)", p.release_branch, startnote)
+    log(p, "Started deploy agent")
+    return ("started", "deploy agent launched")
+
+
+def run_ideas_agent(p: "Project") -> tuple[str, str]:
+    """Launch the human-run ideas agent (a brainstorm session). Front-of-pipeline;
+    the operator drives it. It appends approved ideas to the backlog."""
+    materialize_agent(p, "ideas")
+    note = (
+        f"You are the ideas agent, a human-run brainstorming partner. Read PROJECT.md, "
+        f"think through ideas with the operator, and append the ideas they approve to "
+        f"{p.docs / p.backlog_file} as QUEUED rows for the product feeder."
+    )
+    start_agent(p, "ideas", "(brainstorm)", "none", note)
+    log(p, "Started ideas agent")
+    return ("started", "ideas agent launched")
+
+
+def run_testing_live_agent(p: "Project") -> tuple[str, str]:
+    """Post-deploy verification: launch the live-testing agent against production.
+    Reports PASS/FAIL, fixes nothing."""
+    materialize_agent(p, "testing-live")
+    target = p.production_ref or "the live environment"
+    startnote = (
+        f"You are the live-testing agent, invoked by the operator. Run live-safe "
+        f"verification against production ({target}): acceptance smoke checks plus any "
+        f"checkpoints from the deployment note at {p.docs / p.deployment_note}. Report "
+        f"PASS or FAIL and classify any failure as a deployment problem or a code "
+        f"problem. Fix nothing."
+    )
+    start_agent(p, "testing-live", "(verify production)", p.release_branch, startnote)
+    log(p, "Started live-verification agent")
+    return ("started", "live-testing agent launched")
 
 
 def session_alive(p: "Project", stage: str) -> bool:
     return _tmux("has-session", "-t", p.tmux(stage)).returncode == 0
 
 
-def write_startup_context(p: "Project", stage: str, feature: str, cycle: str, branch: str, note: str = ""):
+def write_startup_context(p: "Project", stage: str, feature: str, branch: str, note: str = ""):
     adir = p.agent_dir(stage)
     ctx = (
         f"# Startup Context\n\n"
         f"Agent stage: {stage}\n"
         f"Project: {p.label}\n"
         f"Feature: {feature}\n"
-        f"Cycle: {cycle}\n"
         f"Branch: {branch}\n"
         f"Repo: {p.repo}\n"
         f"Pipeline docs: {p.docs}\n\n"
@@ -283,10 +500,10 @@ def write_startup_context(p: "Project", stage: str, feature: str, cycle: str, br
     (adir / "startup-context.md").write_text(ctx)
 
 
-def start_agent(p: "Project", stage: str, feature: str, cycle: str, branch: str, note: str = ""):
+def start_agent(p: "Project", stage: str, feature: str, branch: str, note: str = ""):
     session = p.tmux(stage)
     adir = str(p.agent_dir(stage))
-    write_startup_context(p, stage, feature, cycle, branch, note)
+    write_startup_context(p, stage, feature, branch, note)
     _tmux("kill-session", "-t", session)
     time.sleep(1)
     r = _tmux("new-session", "-d", "-s", session, "-c", adir)
@@ -404,27 +621,52 @@ def next_stage(p: "Project", stage: str) -> str | None:
 def start_feature(p: "Project", item: dict):
     feature = item["feature"]
     safe = re.sub(r'[^a-z0-9]+', '-', feature.lower()).strip('-')[:40].strip('-')
-    cycle = "cycle-001"
     branch = f"{p.feature_prefix}{item['id']}-{safe}"
-    # Create/switch to the feature branch ourselves before any agent runs, so work
-    # is isolated deterministically. If it fails, escalate instead of proceeding on
-    # whatever branch happens to be checked out.
-    ok, msg = checkout_branch(p, branch)
+    # Ensure the base branch exists, then cut the feature branch FROM it (not from
+    # whatever happens to be checked out), so every feature starts from a known base.
+    ok, msg = ensure_base_branch(p)
+    if not ok:
+        log(p, f"ERROR: could not ensure base branch {p.base_branch}: {msg}")
+        escalate(p, f"Could not create base branch '{p.base_branch}'", msg)
+        return
+    ok, msg = checkout_branch(p, branch, base=p.base_branch)
     if not ok:
         log(p, f"ERROR: could not checkout branch {branch}: {msg}")
         escalate(p, f"Could not create feature branch for '{feature}'",
-                 f"git checkout of {branch} failed: {msg}")
+                 f"git checkout of {branch} from {p.base_branch} failed: {msg}")
         return
     update_queue_status(p, item["id"], "ACTIVE")
     first = p.stages[0]
     write_state(p, {
         "current_stage": first, "stage_status": "IN PROGRESS",
         "current_feature": feature, "current_feature_id": item["id"],
-        "current_cycle": cycle, "current_branch": branch,
+        "current_branch": branch,
         "kick_back_count": "0", "waiting_for": "none",
     })
-    log(p, f"Starting feature '{feature}' (id {item['id']}) at stage {first} on branch {branch}")
-    start_agent(p, first, feature, cycle, branch)
+    log(p, f"Starting feature '{feature}' (id {item['id']}) at stage {first} on branch {branch} (from {p.base_branch})")
+    start_agent(p, first, feature, branch)
+
+
+def start_product_feeder(p: "Project"):
+    """Run the product agent as a feeder: convert QUEUED backlog rows into
+    build-queue features. It works on the pipeline docs, not a feature branch, so
+    no checkout happens. It is tracked as current_stage 'product'; handle() treats
+    its COMPLETE specially (feeder-done), not as end-of-pipeline."""
+    n = count_backlog_queued(p)
+    write_state(p, {
+        "current_stage": "product", "stage_status": "IN PROGRESS",
+        "current_feature": "(populate queue from backlog)", "current_feature_id": "",
+        "current_branch": "none", "waiting_for": "none",
+    })
+    note = (
+        f"You are running as the product feeder. Read {p.docs}/{p.backlog_file}, and for "
+        f"each row with Status QUEUED, append a build-queue row to {p.queue_file} in the "
+        f"format `| ID | Feature | QUEUED | none |` (increment the ID from the last queue "
+        f"row), then set that backlog row's Status to PROCESSED. When done, set "
+        f"**Stage status:** COMPLETE and stop."
+    )
+    start_agent(p, "product", "(populate queue from backlog)", "none", note)
+    log(p, f"Started product feeder ({n} backlog item(s) queued)")
 
 
 def handle(p: "Project", state: dict, items: list):
@@ -432,7 +674,6 @@ def handle(p: "Project", state: dict, items: list):
     status = state.get("stage_status", "IDLE").upper()
     feature = state.get("current_feature", "none")
     feature_id = state.get("current_feature_id", "")
-    cycle   = state.get("current_cycle", "cycle-001")
     branch  = state.get("current_branch", "none")
 
     def mark_active_feature(new_status: str):
@@ -451,26 +692,63 @@ def handle(p: "Project", state: dict, items: list):
         nxt = next_queued(items)
         if nxt:
             start_feature(p, nxt)
+            return
+        # Nothing runnable in the queue. Consider the front feeder: if the backlog
+        # has QUEUED items, run product at the top autonomy level, otherwise just
+        # signal that it could be run. Idea-gen itself is never auto-started.
+        if count_backlog_queued(p) > 0:
+            if p.autonomy >= 4:
+                start_product_feeder(p)
+                return
+            signal(p, f"Backlog has {count_backlog_queued(p)} queued item(s); "
+                      f"run the product feeder to turn them into build-queue features.")
+        # Back gate readiness: if base is ahead of release, the operator can promote
+        # and deploy. Signal only; the daemon NEVER promotes or deploys itself, at
+        # any autonomy level.
+        ahead = base_ahead_of_release(p)
+        if ahead > 0:
+            signal(p, f"{p.base_branch} is ahead of {p.release_branch} by {ahead} "
+                      f"commit(s); ready to promote and deploy (human-gated).")
         return
 
     if status == "IN PROGRESS":
         return  # agent is working; nothing to do
 
+    # The product feeder is tracked as a stage but is not part of the pipeline;
+    # its COMPLETE means "queue refreshed", not "feature finished".
+    if status == "COMPLETE" and stage == "product":
+        kill_agent(p, "product")
+        write_state(p, {"current_stage": "none", "stage_status": "IDLE",
+                        "current_feature": "none", "current_feature_id": "",
+                        "current_branch": "none", "waiting_for": "none"})
+        log(p, "Product feeder finished; queue refreshed")
+        return
+
     if status == "COMPLETE":
         nxt = next_stage(p, stage)
         if nxt is None:
-            # end of pipeline for this feature
-            mark_active_feature("COMPLETE")
-            log(p, f"Feature '{feature}' complete (finished stage {stage}).")
+            # End of pipeline: merge the feature back into the base branch, then
+            # the queue continues on a fresh branch cut from the updated base.
             kill_agent(p, stage)
-            write_state(p, {"current_stage": "none", "stage_status": "IDLE",
-                            "current_feature": "none", "current_feature_id": "",
-                            "waiting_for": "none"})
+            status_m, msg = merge_feature_to_base(p, branch)
+            if status_m == "merged":
+                mark_active_feature("COMPLETE")
+                log(p, f"Feature '{feature}' complete; {msg}.")
+                write_state(p, {"current_stage": "none", "stage_status": "IDLE",
+                                "current_feature": "none", "current_feature_id": "",
+                                "current_branch": "none", "waiting_for": "none"})
+            else:
+                # Conflict or error: do not advance. Leave the branch for the human,
+                # mark the row BLOCKED, halt on OPERATOR, and escalate.
+                mark_active_feature("BLOCKED")
+                escalate(p, f"Could not merge '{feature}' into {p.base_branch}", msg)
+                write_state(p, {"stage_status": "BLOCKED", "waiting_for": "OPERATOR"})
+                log(p, f"Feature '{feature}' merge {status_m}: {msg}")
             return
         if p.autonomy >= 3:
             kill_agent(p, stage)
             write_state(p, {"current_stage": nxt, "stage_status": "IN PROGRESS"})
-            start_agent(p, nxt, feature, cycle, branch)
+            start_agent(p, nxt, feature, branch)
             log(p, f"Advanced {stage} -> {nxt} for '{feature}'")
         else:
             write_state(p, {"stage_status": "BLOCKED", "waiting_for": "OPERATOR"})
@@ -494,7 +772,7 @@ def handle(p: "Project", state: dict, items: list):
         note = f"Kicked back from {stage}. See the feedback in {p.docs}/dev-inbox/."
         write_state(p, {"current_stage": target, "stage_status": "IN PROGRESS",
                         "kick_back_count": str(count)})
-        start_agent(p, target, feature, cycle, branch, note)
+        start_agent(p, target, feature, branch, note)
         log(p, f"Kicked back {stage} -> {target} (count {count}) for '{feature}'")
         return
 
@@ -503,9 +781,19 @@ def handle(p: "Project", state: dict, items: list):
 # Main
 # --------------------------------------------------------------------------- #
 
+OPERATOR_ACTIONS = {
+    "--promote":     lambda p: promote(p),
+    "--deploy":      lambda p: run_deploy_agent(p),
+    "--verify":      lambda p: run_testing_live_agent(p),
+    "--run-product": lambda p: start_product_feeder(p),
+    "--start-ideas": lambda p: run_ideas_agent(p),
+}
+
+
 def main():
     if len(sys.argv) < 2:
-        print("usage: underseer.py /path/to/project.json", file=sys.stderr)
+        print("usage: underseer.py /path/to/project.json "
+              "[--promote|--deploy|--verify|--run-product|--start-ideas]", file=sys.stderr)
         sys.exit(1)
     try:
         p = Project(sys.argv[1])
@@ -515,6 +803,18 @@ def main():
         print(f"FATAL: cannot load project config: {e}", file=sys.stderr)
         sys.exit(2)
     instantiate(p)
+
+    # One-shot, human-triggered operator actions (the back-end gates and the feeder).
+    # These run once and exit; they are never part of the autonomous loop.
+    action = sys.argv[2] if len(sys.argv) > 2 else None
+    if action is not None:
+        if action not in OPERATOR_ACTIONS:
+            print(f"unknown action: {action}", file=sys.stderr)
+            sys.exit(1)
+        result = OPERATOR_ACTIONS[action](p)
+        print(json.dumps(result) if result is not None else "ok")
+        return
+
     log(p, f"underseer starting for project '{p.name}' "
            f"(stages={p.stages}, autonomy={p.autonomy}, poll={p.poll}s)")
     while True:

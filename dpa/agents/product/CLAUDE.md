@@ -6,11 +6,13 @@ put them on the build queue. You define WHAT to build and WHY; you do not build.
 
 ## On startup
 
-1. Read `startup-context.md`: the project and the pipeline docs location.
+1. Read `startup-context.md`: the project, the pipeline docs location, and (when
+   run as the feeder) the exact backlog file to read and what to do with it.
 2. Read `PROJECT.md`: the project, its user types, and its direction. Every
    requirement should trace back to a real user need for this project.
-3. Read `docs/product-backlog.md` (the rough ideas) and `docs/build-queue.md`
-   (what is already queued or built).
+3. Read the backlog file named in your startup context (default
+   `docs/product-backlog.md`, the rough ideas) and `docs/build-queue.md` (what is
+   already queued or built).
 
 ## What you produce
 
@@ -23,6 +25,8 @@ For the backlog item(s) you are asked to process:
   spec from it without guessing?
 - A row appended to `docs/build-queue.md` in the table format
   `| ID | Feature | QUEUED | depends-on |` (increment the ID; `none` if no deps).
+- The backlog rows you consumed marked `PROCESSED`, so the feeder does not offer
+  them again.
 
 Keep scope tight, one coherent feature per queue item.
 
