@@ -509,6 +509,12 @@ def validate_wiring(p: "Project") -> list:
     return problems
 
 
+def missing_outputs(p: "Project", stage: str, feature: str) -> list:
+    """Safeguard 4: declared output files this stage should have written but did not."""
+    _, writes = stage_io(p, stage, feature)
+    return [w for w in writes if not w.exists()]
+
+
 def write_pipeline_instructions(p: "Project", stage: str, feature: str):
     """Write the authoritative, read-only pipeline overlay into the agent's dir. It
     binds this stage's inputs/outputs/done-signal for this run and OVERRIDES any
@@ -793,6 +799,16 @@ def handle(p: "Project", state: dict, items: list):
         return
 
     if status == "COMPLETE":
+        # Safeguard 4: a stage cannot "complete" without producing its declared
+        # output. Catch a broken hand-off here rather than passing a missing file on.
+        miss_out = missing_outputs(p, stage, feature)
+        if miss_out:
+            mark_active_feature("BLOCKED")
+            escalate(p, f"Stage '{stage}' reported COMPLETE but did not write its output",
+                     ", ".join(str(m) for m in miss_out))
+            write_state(p, {"stage_status": "BLOCKED", "waiting_for": "OPERATOR"})
+            log(p, f"Post-condition failed for {stage}: missing {[str(m) for m in miss_out]}")
+            return
         nxt = next_stage(p, stage)
         if nxt is None:
             # End of pipeline: merge the feature back into the base branch, then
