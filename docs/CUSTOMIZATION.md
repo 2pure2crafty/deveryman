@@ -137,9 +137,12 @@ single **merge node**. Still exclusive (one path per feature), so it keeps the
   end-merge is disabled); without one, the pipeline still auto-merges at its end.
   DPA standard now ends `ux-ui -> merge`. Verified end to end: a real feature branch
   is merged into base at the merge node and the feature finishes.
-- [ ] Form editor: a "Branch chains (by tag)" section + a merge stage, wiring the
-  shared front -> per-tag branches -> merge. The full free-form branching is the
-  visual builder's job.
+- [x] Form editor: a "Branches by feature tag" section (each block a tag + its rows)
+  plus an "End with a merge stage" box; the form wires shared front -> per-tag
+  branches -> merge, with a guardless default straight to merge for untagged features.
+  Edit reconstruction separates the front (guardless spine) from the branches
+  (guarded edges) and detects the merge. Full free-form branching stays the visual
+  builder's job.
 - Decider: the tag is set when the feature is created (the product/features agent
   writes the build-queue row); a deterministic guard match keeps routing transparent.
   An LLM router/classifier is a later upgrade.

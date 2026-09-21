@@ -56,6 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $prev = $nid;
     }
     if (!$nodes) $errors[] = 'Add at least one stage.';
+    $lastMain = $prev;   // the end of the shared front; branches fork from here
 
     // Optional escalation chain: a second run of agents a feature is routed onto after
     // repeated same-spot failure on the main chain. Built from its own rows; sequential.
@@ -90,6 +91,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         unset($n);
+    }
+
+    // Optional tag branches: after the shared front, fork by feature tag onto branch
+    // chains that rejoin at the merge node. Each block is a tag + its own rows.
+    $brTags  = $_POST['branch_tag'] ?? [];
+    $brTypes = $_POST['branch_type'] ?? [];
+    $brIds   = $_POST['branch_id'] ?? [];
+    $brKick  = $_POST['branch_kick'] ?? [];
+    $branches = [];   // each: ['tag'=>, 'head'=>, 'tail'=>]
+    foreach ($brTags as $b => $tagRaw) {
+        $tag = trim((string) $tagRaw);
+        $rows = $brTypes[$b] ?? [];
+        $head = null; $bprev = null;
+        foreach ($rows as $r => $typeId) {
+            $typeId = trim((string) $typeId);
+            if ($typeId === '' || !isset($types[$typeId])) continue;
+            $nid = deveryman_slug_id(trim((string) ($brIds[$b][$r] ?? ''))) ?? (($tag !== '' ? $tag : 'br') . '-' . $typeId);
+            $node = ['id' => $nid, 'agent_type' => $typeId];
+            $kt = deveryman_slug_id(trim((string) ($brKick[$b][$r] ?? '')));
+            if ($kt !== null) {
+                $node['kickback'] = ['target' => $kt,
+                    'doc' => $types[$typeId]['kickback_doc'] ?? ('dev-inbox/' . $nid . '-feedback.md')];
+            }
+            $nodes[] = $node;
+            if ($head === null) $head = $nid;
+            if ($bprev !== null) $flow[] = ['from' => $bprev, 'to' => $nid];
+            $bprev = $nid;
+        }
+        if ($head !== null) $branches[] = ['tag' => $tag, 'head' => $head, 'tail' => $bprev];
+    }
+
+    // Merge node: the rejoin/end. Wanted if any branch exists (they must rejoin) or
+    // the box is ticked. Fork edges leave the front: one guarded edge per branch, plus
+    // a guardless default straight to merge for untagged/unmatched features.
+    $mergeWanted = $branches || (($_POST['end_merge'] ?? '') === '1');
+    if ($mergeWanted && $lastMain !== null) {
+        $nodes[] = ['id' => 'merge', 'agent_type' => 'merge'];
+        foreach ($branches as $br) {
+            $edge = ['from' => $lastMain, 'to' => $br['head']];
+            if ($br['tag'] !== '') $edge['when'] = ['tag' => $br['tag']];
+            $flow[] = $edge;
+            $flow[] = ['from' => $br['tail'], 'to' => 'merge'];
+        }
+        $flow[] = ['from' => $lastMain, 'to' => 'merge'];
     }
 
     $conductor = ($_POST['conductor'] ?? '') === '1';
@@ -141,27 +186,63 @@ if ($pre !== null && ($pre['source'] ?? '') === 'builtin') {
     $preIsBuiltin = false;
 }
 
-// Reconstruct ordered rows for each chain (main + escalation) from the template.
-$rows = []; $escRows = []; $escThreshold = 0;
+// Reconstruct the editor from a saved template: the shared front (guardless spine),
+// the escalation chain, the tag branches (guarded edges), and whether a merge exists.
+$rows = []; $escRows = []; $escThreshold = 0; $branchBlocks = []; $mergeChecked = ($pre === null);
 if ($pre !== null) {
     $flowAll = $pre['flow'] ?? [];
     $byId = [];
     foreach ($pre['nodes'] ?? [] as $n) $byId[$n['id'] ?? ''] = $n;
-    $mainIds = []; $escIds = [];
+    // The merge node + escalation nodes are handled separately from the front rows.
+    $mergeId = null;
+    foreach ($pre['nodes'] ?? [] as $n) if (($n['agent_type'] ?? '') === 'merge') { $mergeId = $n['id'] ?? 'merge'; break; }
+    $mergeChecked = $mergeId !== null;
+    $firstOut = function (string $from, bool $guarded) use ($flowAll) {
+        foreach ($flowAll as $e) {
+            if (($e['from'] ?? '') !== $from) continue;
+            if ($guarded === !empty($e['when'])) return $e;
+        }
+        return null;
+    };
+    // Front spine: from the first node, follow guardless edges (stopping at merge).
+    $mainNodes = [];
     foreach ($pre['nodes'] ?? [] as $n) {
-        $nid = $n['id'] ?? '';
-        if (($n['chain'] ?? 'main') === 'escalation') $escIds[$nid] = true; else $mainIds[$nid] = true;
+        if (($n['chain'] ?? 'main') === 'escalation') continue;
+        if (($n['agent_type'] ?? '') === 'merge') continue;
+        $mainNodes[$n['id'] ?? ''] = true;
     }
-    $sub = fn(array $ids) => array_values(array_filter($flowAll, fn($e) => isset($ids[$e['from'] ?? ''], $ids[$e['to'] ?? ''])));
-    $mainNodes = array_intersect_key($byId, $mainIds);
-    $escNodes  = array_intersect_key($byId, $escIds);
-    foreach (deveryman_flow_order(array_values($mainNodes), $sub($mainIds)) as $nid) {
-        $n = $byId[$nid] ?? null; if ($n === null) continue;
+    $targets = [];
+    foreach ($flowAll as $e) if (empty($e['when'])) $targets[$e['to'] ?? ''] = true;
+    $start = null;
+    foreach ($mainNodes as $mid => $_) if (!isset($targets[$mid])) { $start = $mid; break; }
+    $seen = []; $cur = $start;
+    while ($cur !== null && isset($mainNodes[$cur]) && !isset($seen[$cur])) {
+        $seen[$cur] = true;
+        $n = $byId[$cur];
         $rows[] = ['type' => $n['agent_type'] ?? '', 'id' => $n['id'] ?? '',
                    'kick' => $n['kickback']['target'] ?? '', 'extra' => $n['extra_instructions'] ?? ''];
         if (!empty($n['kickback']['fail_threshold'])) $escThreshold = (int) $n['kickback']['fail_threshold'];
+        $ne = $firstOut($cur, false);
+        $cur = $ne['to'] ?? null;
     }
-    foreach (deveryman_flow_order(array_values($escNodes), $sub($escIds)) as $nid) {
+    // Branches: each guarded edge out of the front starts a branch chain; walk it to
+    // the merge (or its end), collecting its rows and its tag.
+    foreach ($flowAll as $e) {
+        if (empty($e['when']['tag'])) continue;
+        $tag = $e['when']['tag']; $brows = []; $bcur = $e['to'] ?? null; $guard = 0;
+        while ($bcur !== null && $bcur !== $mergeId && isset($byId[$bcur]) && $guard++ < 30) {
+            $bn = $byId[$bcur];
+            $brows[] = ['type' => $bn['agent_type'] ?? '', 'id' => $bn['id'] ?? '', 'kick' => $bn['kickback']['target'] ?? ''];
+            $ne = $firstOut($bcur, false);
+            $bcur = $ne['to'] ?? null;
+        }
+        $branchBlocks[] = ['tag' => $tag, 'rows' => $brows];
+    }
+    // Escalation rows (chain = escalation), ordered by their sub-flow.
+    $escIds = [];
+    foreach ($pre['nodes'] ?? [] as $n) if (($n['chain'] ?? 'main') === 'escalation') $escIds[$n['id'] ?? ''] = true;
+    $subEsc = array_values(array_filter($flowAll, fn($e) => isset($escIds[$e['from'] ?? ''], $escIds[$e['to'] ?? ''])));
+    foreach (deveryman_flow_order(array_values(array_intersect_key($byId, $escIds)), $subEsc) as $nid) {
         $n = $byId[$nid] ?? null; if ($n === null) continue;
         $escRows[] = ['type' => $n['agent_type'] ?? '', 'id' => $n['id'] ?? '', 'kick' => $n['kickback']['target'] ?? ''];
     }
@@ -230,7 +311,37 @@ for ($i = 0; $i < $escRowCount; $i++) {
     echo '</div>';
 }
 
+echo '<h2>Branches by feature tag (optional)</h2>';
+echo '<p class="meta">Route a feature by its tag (the build-queue row\'s tag: ui / backend / bugfix / ...). '
+    . 'After the shared front above, a tagged feature forks onto its branch here, then all branches rejoin '
+    . 'at the merge stage. Untagged features go straight to merge. Leave empty for a single linear pipeline.</p>';
+$branchCount = 3; $branchRowCount = 3;
+for ($bk = 0; $bk < $branchCount; $bk++) {
+    $blk = $branchBlocks[$bk] ?? ['tag' => '', 'rows' => []];
+    echo '<div class="card" style="padding:8px">';
+    echo '<label style="margin-top:0">Branch tag <input type="text" name="branch_tag[' . $bk . ']" value="' . fw_h((string) $blk['tag']) . '" placeholder="e.g. ui"></label>';
+    for ($r = 0; $r < $branchRowCount; $r++) {
+        $curType = $blk['rows'][$r]['type'] ?? '';
+        $curId   = $blk['rows'][$r]['id'] ?? '';
+        $curKick = $blk['rows'][$r]['kick'] ?? '';
+        echo '<div style="margin-top:4px">';
+        echo '<select name="branch_type[' . $bk . '][' . $r . ']" style="width:40%"><option value="">(empty)</option>';
+        foreach ($types as $tid => $t) {
+            $sel = ($tid === $curType) ? ' selected' : '';
+            echo '<option value="' . fw_h($tid) . '"' . $sel . '>' . fw_h(($t['label'] ?? $tid) . ' [' . ($t['kind'] ?? 'stage') . ']') . '</option>';
+        }
+        echo '</select> ';
+        echo '<input type="text" name="branch_id[' . $bk . '][' . $r . ']" value="' . fw_h((string) $curId) . '" placeholder="node id" style="width:27%"> ';
+        echo '<input type="text" name="branch_kick[' . $bk . '][' . $r . ']" value="' . fw_h((string) $curKick) . '" placeholder="kickback to" style="width:27%">';
+        echo '</div>';
+    }
+    echo '</div>';
+}
+
 echo '<h2>Branching + gates</h2>';
+$mergeAttr = $mergeChecked ? ' checked' : '';
+echo '<label><input type="checkbox" name="end_merge" value="1" style="width:auto"' . $mergeAttr . '> '
+    . 'End with a merge stage (the daemon merges the feature into base there; required if you use branches)</label>';
 echo '<label>Base branch <input type="text" name="base_branch" value="' . fw_h((string) ($b['base_branch'] ?? 'staging')) . '"></label>';
 echo '<label>Release branch <input type="text" name="release_branch" value="' . fw_h((string) ($b['release_branch'] ?? 'main')) . '"></label>';
 echo '<label>Feature branch prefix <input type="text" name="feature_branch_prefix" value="' . fw_h((string) ($b['feature_branch_prefix'] ?? 'feature/')) . '"></label>';
