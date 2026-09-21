@@ -21,8 +21,11 @@ if (is_file($projectsPath)) {
 fw_header('Home');
 echo "<h1>D'everyman</h1>";
 echo '<p class="desc">Your projects, through either lens: Conductor (manual agents) or DPA (the pipeline).</p>';
-echo '<a class="btn" style="background:#444" href="setup.php">AI credentials</a>';
+$msg = $_GET['msg'] ?? '';
+if ($msg !== '') echo '<div class="card"><strong>' . fw_h($msg) . '</strong></div>';
+echo '<a class="btn" href="new-project.php">New project</a>';
 echo '<a class="btn" style="background:#444" href="import.php">Import a repo</a>';
+echo '<a class="btn" style="background:#444" href="setup.php">AI credentials</a>';
 echo '<a class="btn" style="background:#444" href="system.php">System</a>';
 
 // Aggregate token view
