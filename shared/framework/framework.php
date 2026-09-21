@@ -49,6 +49,27 @@ function fw_require_auth(): void {
     }
 }
 
+/* --- CSRF (session token, Basic-auth friendly) ----------------------------- */
+
+/** Per-session CSRF token; created on first use. */
+function fw_csrf_token(): string {
+    if (session_status() !== PHP_SESSION_ACTIVE) session_start();
+    if (empty($_SESSION['csrf'])) $_SESSION['csrf'] = bin2hex(random_bytes(16));
+    return $_SESSION['csrf'];
+}
+
+/** Validate the CSRF token on a state-changing POST. */
+function fw_csrf_ok(): bool {
+    if (session_status() !== PHP_SESSION_ACTIVE) session_start();
+    $t = $_POST['csrf'] ?? '';
+    return is_string($t) && $t !== '' && !empty($_SESSION['csrf']) && hash_equals($_SESSION['csrf'], $t);
+}
+
+/** Hidden CSRF input for a form. */
+function fw_csrf_field(): string {
+    return '<input type="hidden" name="csrf" value="' . fw_h(fw_csrf_token()) . '">';
+}
+
 /** Run an argv command (no shell), optionally with stdin and a timeout.
  *  Returns [exit, stdout, stderr]. On timeout: exit 124. */
 function fw_run_cmd(array $argv, ?string $cwd = null, string $stdin = '', int $timeout = 0): array {

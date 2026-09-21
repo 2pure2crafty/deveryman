@@ -77,7 +77,6 @@ if ($handoff) {
 echo '<h2>Conductor</h2>';
 $agents = $condProj['agents'] ?? [];
 $spawnUrl = $conductorUrl !== '' ? rtrim($conductorUrl, '/') . '/spawn-form.php?project=' . rawurlencode($slug) : '';
-$openUrl  = $conductorUrl !== '' ? rtrim($conductorUrl, '/') . '/project.php?slug=' . rawurlencode($slug) : '';
 if (empty($agents)) {
     echo '<div class="card"><div class="meta">No agents yet.</div>';
     if ($spawnUrl !== '') echo '<a class="btn" href="' . fw_h($spawnUrl) . '">New agent</a>';
@@ -94,7 +93,7 @@ if (empty($agents)) {
             $peek = implode("\n", array_slice(@file($sm, FILE_IGNORE_NEW_LINES) ?: [], 0, 30));
             echo '<details><summary>Last handoff</summary><pre>' . fw_h($peek) . '</pre></details>';
         }
-        if ($openUrl !== '') echo '<a class="btn" style="background:#444" href="' . fw_h($openUrl) . '">Open in Conductor</a>';
+        echo '<a class="btn" style="background:#444" href="agent.php?slug=' . rawurlencode($slug) . '&agent=' . rawurlencode((string) $an) . '">Open</a>';
         echo '</div>';
     }
     if ($spawnUrl !== '') echo '<a class="btn" href="' . fw_h($spawnUrl) . '">New agent</a>';
