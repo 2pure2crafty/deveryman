@@ -49,10 +49,15 @@ canvas{display:block}
 .dv-btn.dv-danger{background:#7f1d1d}.dv-save{width:100%}
 .dv-msg{margin-top:8px;font-size:.78rem;color:#aaa}.dv-msg.ok{color:#4ade80}.dv-msg.err{color:#f87171}
 .dv-palette select{width:100%;box-sizing:border-box;background:#141414;color:#eee;border:1px solid #333;border-radius:5px;padding:5px}
+.demo-chip{background:#5a4b1f;color:#f7e08a;border-radius:10px;padding:2px 8px;font-size:.72rem;margin-left:8px}
+.dv-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:50}
+.dv-modal .box{background:#1c1c1c;border:1px solid #444;border-radius:10px;padding:20px;max-width:340px;text-align:center}
+.dv-modal h3{color:#7ab8ff;margin:0 0 8px}.dv-modal p{color:#bbb;font-size:.86rem}
 </style></head><body>
 <div id="bar">
   <a href="templates.php">&larr; Templates</a>
   <b><?= fw_h($model['label']) ?></b><span class="muted">pipeline builder</span>
+  <?php if (fw_demo()): ?><span class="demo-chip">DEMO</span><?php endif; ?>
   <span class="lg">
     <span class="f">&#9679; flow</span><span class="k">&#9679; kickback</span>
     <span class="e">&#9679; escalation</span><span class="t">&#9679; tag fork</span>
@@ -69,6 +74,7 @@ canvas{display:block}
     tags: <?= $tagsJson ?>,
     saveUrl: "pipeline-save.php",
     csrf: <?= json_encode($csrf) ?>,
+    demo: <?= fw_demo() ? 'true' : 'false' ?>,
     canvas: "#c"
   });
 </script>

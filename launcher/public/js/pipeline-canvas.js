@@ -403,7 +403,19 @@
     };
   }
   function val(id, dflt) { var e = document.getElementById(id); return e ? e.value : dflt; }
+  function demoModal() {
+    var ov = el("div", "dv-modal"); var box = el("div", "box");
+    box.appendChild(el("h3", null, "Demo mode"));
+    box.appendChild(el("p", null, "This is a demo of D'everyman. Building a pipeline works fully here, "
+      + "but saving is disabled: the demo is not connected to any agents, repositories, or AI. In the full "
+      + "version, Save writes the pipeline and the daemon runs it."));
+    var ok = el("button", "dv-btn", "Got it"); ok.onclick = function () { document.body.removeChild(ov); };
+    box.appendChild(ok); ov.appendChild(box);
+    ov.onclick = function (e) { if (e.target === ov) document.body.removeChild(ov); };
+    document.body.appendChild(ov);
+  }
   function doSave() {
+    if (state.demo) { demoModal(); return; }
     var msg = document.getElementById("dv-msg"); msg.textContent = "Saving..."; msg.className = "dv-msg";
     var body = new URLSearchParams(); body.set("csrf", state.csrf); body.set("payload", JSON.stringify(serialise()));
     fetch(state.saveUrl, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() })
@@ -425,7 +437,7 @@
 
   function render(opts) {
     var model = opts.model;
-    state = { model: model, palette: opts.palette || [], tags: opts.tags || [], saveUrl: opts.saveUrl, csrf: opts.csrf, selected: null };
+    state = { model: model, palette: opts.palette || [], tags: opts.tags || [], saveUrl: opts.saveUrl, csrf: opts.csrf, demo: !!opts.demo, selected: null };
     theme(); registerType();
     layout(model);
     var graph = new LGraph(), canvas = new LGraphCanvas(opts.canvas, graph);

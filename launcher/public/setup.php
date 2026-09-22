@@ -4,6 +4,7 @@ define('DEVERYMAN_APP', "D'everyman");
 define('DEVERYMAN_CONFIG', getenv('DEVERYMAN_CONFIG') ?: '/etc/default/conductor');
 require __DIR__ . '/../../shared/framework/framework.php';
 fw_require_auth();
+fw_demo_block('AI credentials');
 
 // Claude Code status: is the CLI present, and has it been used (auth/config
 // present)? We don't spend a token to verify; we report what's on disk.

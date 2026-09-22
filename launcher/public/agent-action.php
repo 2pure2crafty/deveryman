@@ -5,6 +5,7 @@ define('DEVERYMAN_CONFIG', getenv('DEVERYMAN_CONFIG') ?: '/etc/default/conductor
 require __DIR__ . '/../../shared/framework/framework.php';
 require_once __DIR__ . '/../../conductor/lib.php';   // spawn_tmux_agent, perform_wrapdown, load_registry, agent_dir
 fw_require_auth();
+fw_demo_block('Agent controls');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);

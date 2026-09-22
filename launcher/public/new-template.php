@@ -5,6 +5,7 @@ define('DEVERYMAN_CONFIG', getenv('DEVERYMAN_CONFIG') ?: '/etc/default/conductor
 require __DIR__ . '/../../shared/framework/framework.php';
 require_once __DIR__ . '/../registry.php';
 fw_require_auth();
+if ($_SERVER['REQUEST_METHOD'] === 'POST') fw_demo_block('Saving');
 
 const TEMPLATE_ROWS = 12;   // ordered stage/gate slots in the form-based editor
 

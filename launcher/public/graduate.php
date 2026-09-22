@@ -6,6 +6,7 @@ require __DIR__ . '/../../shared/framework/framework.php';
 require_once __DIR__ . '/../lib.php';
 require_once __DIR__ . '/../../conductor/lib.php';   // load_registry, agent_status, perform_wrapdown
 fw_require_auth();
+if ($_SERVER['REQUEST_METHOD'] === 'POST') fw_demo_block('Saving');
 fw_csrf_token();
 
 $agentSlug = $_REQUEST['agent'] ?? '';

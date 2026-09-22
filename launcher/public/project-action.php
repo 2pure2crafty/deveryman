@@ -5,6 +5,7 @@ define('DEVERYMAN_CONFIG', getenv('DEVERYMAN_CONFIG') ?: '/etc/default/conductor
 require __DIR__ . '/../../shared/framework/framework.php';
 require_once __DIR__ . '/../../dpa/lib.php';   // dpa_projects, dpa_config, dpa_gate_actions, dpa_underseer_path, dpa_gate_audit, dpa_daemon_active
 fw_require_auth();
+fw_demo_block('Pipeline controls');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);

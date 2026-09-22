@@ -21,6 +21,10 @@ function fw_config(): array {
     static $c = null;
     if ($c !== null) return $c;
     $c = [];
+    // The demo never reads the host config: it must not pick up a real box's
+    // credentials, URLs, or transcript paths if it happens to run somewhere that has
+    // one. Everything falls back to safe defaults.
+    if (fw_demo()) return $c;
     if (is_readable(DEVERYMAN_CONFIG)) {
         foreach (file(DEVERYMAN_CONFIG, FILE_IGNORE_NEW_LINES) as $line) {
             $line = trim($line);
@@ -35,8 +39,47 @@ function fw_config_get(string $key, string $default = ''): string {
     return fw_config()[$key] ?? $default;
 }
 
+/**
+ * Demo mode: a public, side-effect-free build for sharing. On when a `.demo-mode`
+ * file sits at the repo root (committed only on the demo branch) or DEVERYMAN_DEMO=1.
+ * When on: auth is skipped, every shell-out is neutralized (fw_run_cmd returns empty,
+ * so no git/tmux/systemctl/gh/claude ever runs), and action endpoints show a popup
+ * via fw_demo_block instead of doing anything. Reads still work off committed fixtures
+ * and the code-seeded registries, so the UI is fully explorable with no backend.
+ */
+function fw_demo(): bool {
+    static $d = null;
+    if ($d === null) $d = getenv('DEVERYMAN_DEMO') === '1' || is_file(__DIR__ . '/../../.demo-mode');
+    return $d;
+}
+
+/**
+ * In demo mode, halt a state-changing request with a friendly notice: JSON for
+ * XHR/fetch callers, otherwise a small popup page. No-op outside demo mode. Call it
+ * at the top of every action (write / spawn / deploy / credentials) handler.
+ */
+function fw_demo_block(string $action = 'That action'): void {
+    if (!fw_demo()) return;
+    $msg = "{$action} is disabled in this demo: it is not connected to any agents, "
+         . "repositories, or AI. In the full version it works for real.";
+    $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
+    if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest' || strpos($accept, 'application/json') !== false) {
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => false, 'demo' => true, 'errors' => [$msg]]);
+        exit;
+    }
+    fw_header('Demo', '/');
+    echo '<h1>Demo mode</h1>';
+    echo '<div class="card"><strong>' . fw_h($action) . '</strong>'
+       . '<p class="desc">' . fw_h($msg) . '</p>'
+       . '<a class="btn" href="/">&larr; Back to the demo</a></div>';
+    fw_footer();
+    exit;
+}
+
 /** HTTP basic auth against CONDUCTOR_USER/CONDUCTOR_PASS in the config file. */
 function fw_require_auth(): void {
+    if (fw_demo()) return;   // the demo is public
     $user = fw_config_get('CONDUCTOR_USER');
     $pass = fw_config_get('CONDUCTOR_PASS');
     $gu = $_SERVER['PHP_AUTH_USER'] ?? '';
@@ -73,6 +116,10 @@ function fw_csrf_field(): string {
 /** Run an argv command (no shell), optionally with stdin and a timeout.
  *  Returns [exit, stdout, stderr]. On timeout: exit 124. */
 function fw_run_cmd(array $argv, ?string $cwd = null, string $stdin = '', int $timeout = 0): array {
+    // Demo mode runs nothing: no git, systemctl, tmux, gh, or claude ever executes.
+    // Callers treat this as "no output / not active", which is exactly right for a
+    // disconnected demo, and it means the demo is safe on plain shared hosting.
+    if (fw_demo()) return [0, '', ''];
     $d = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
     $p = proc_open($argv, $d, $pipes, $cwd);
     if (!is_resource($p)) return [1, '', 'failed to start'];

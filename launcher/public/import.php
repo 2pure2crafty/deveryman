@@ -5,6 +5,7 @@ define('DEVERYMAN_CONFIG', getenv('DEVERYMAN_CONFIG') ?: '/etc/default/conductor
 require __DIR__ . '/../../shared/framework/framework.php';
 require_once __DIR__ . '/../lib.php';   // deveryman_* templates + finalize + slugify
 fw_require_auth();
+if ($_SERVER['REQUEST_METHOD'] === 'POST') fw_demo_block('Saving');
 
 $importsRoot = rtrim(fw_config_get('DEVERYMAN_PROJECTS_DIR', '/var/www/dpa-projects'), '/');
 $projectsPath = __DIR__ . '/../../projects.json';

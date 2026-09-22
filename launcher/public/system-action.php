@@ -5,6 +5,7 @@ define('DEVERYMAN_CONFIG', getenv('DEVERYMAN_CONFIG') ?: '/etc/default/conductor
 require __DIR__ . '/../../shared/framework/framework.php';
 require __DIR__ . '/../lib.php';
 fw_require_auth();
+fw_demo_block('Server controls');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);

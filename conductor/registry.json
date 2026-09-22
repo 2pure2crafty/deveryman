@@ -1,0 +1,18 @@
+{
+    "projects": {
+        "acme-store": {
+            "label": "Acme Store", "path": "/demo/acme-store", "repo": null,
+            "description": "A small demo shop project.",
+            "agents": {
+                "ideas": { "label": "Ideas", "path": "conductor/ideas", "tmux": "DEMO-acme-ideas", "model": "sonnet", "permission_mode": "acceptEdits", "auto_wrapdown": false }
+            }
+        },
+        "oneshot": {
+            "label": "One-shot agents", "path": "/demo/oneshot", "repo": null,
+            "description": "Project-less agents.",
+            "agents": {
+                "pricing-ideas": { "label": "Pricing ideas", "path": "conductor/pricing-ideas", "tmux": "DEMO-oneshot-pricing", "model": "sonnet", "permission_mode": "acceptEdits", "auto_wrapdown": false, "template": "ideas" }
+            }
+        }
+    }
+}

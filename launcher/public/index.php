@@ -22,6 +22,14 @@ if (is_file($projectsPath)) {
 
 fw_header('Home');
 echo "<h1>D'everyman</h1>";
+if (fw_demo()) {
+    echo '<div class="card" style="border-color:#5a4b1f;background:#25200f">'
+        . '<strong style="color:#f7e08a">Demo</strong>'
+        . '<p class="desc">This is a public demo of D\'everyman, a self-hosted theatre for your Claude Code '
+        . 'agents. Explore everything: the projects, the agent-type and template libraries, tags, and the '
+        . 'visual <strong>pipeline builder</strong>. Actions that would connect to real agents, repositories, '
+        . 'or AI are disabled and will say so. Nothing here is live.</p></div>';
+}
 echo '<p class="desc">Your projects. Open one to drive its agents (Conductor) or run its pipeline (DPA).</p>';
 $msg = $_GET['msg'] ?? '';
 if ($msg !== '') echo '<div class="card"><strong>' . fw_h($msg) . '</strong></div>';
@@ -33,16 +41,19 @@ echo '<a class="btn" style="background:#444" href="agent-types.php">Agent types<
 echo '<a class="btn" style="background:#444" href="templates.php">Pipeline templates</a>';
 echo '<a class="btn" style="background:#444" href="tags.php">Tags</a>';
 
-// Aggregate token view
-$tot = fw_total_tokens();
-$used = $tot['input'] + $tot['output'] + $tot['cache_read'] + $tot['cache_write'];
-$saved = fw_estimated_saved();
-echo '<div class="card"><strong>Tokens</strong>'
-    . '<div class="meta">used across everything: ' . fw_fmt_tokens($used)
-    . ' (' . fw_fmt_tokens($tot['input'] + $tot['cache_read'] + $tot['cache_write']) . ' in / '
-    . fw_fmt_tokens($tot['output']) . ' out, ' . $tot['files'] . ' transcripts)</div>'
-    . '<div class="meta">estimated saved by auto-wrap-downs: ' . fw_fmt_tokens($saved) . ' (guesstimate)</div>'
-    . '</div>';
+// Aggregate token view (a real-usage metric; hidden in the demo so it never shows a
+// host's actual numbers).
+if (!fw_demo()) {
+    $tot = fw_total_tokens();
+    $used = $tot['input'] + $tot['output'] + $tot['cache_read'] + $tot['cache_write'];
+    $saved = fw_estimated_saved();
+    echo '<div class="card"><strong>Tokens</strong>'
+        . '<div class="meta">used across everything: ' . fw_fmt_tokens($used)
+        . ' (' . fw_fmt_tokens($tot['input'] + $tot['cache_read'] + $tot['cache_write']) . ' in / '
+        . fw_fmt_tokens($tot['output']) . ' out, ' . $tot['files'] . ' transcripts)</div>'
+        . '<div class="meta">estimated saved by auto-wrap-downs: ' . fw_fmt_tokens($saved) . ' (guesstimate)</div>'
+        . '</div>';
+}
 
 echo '<h2>Projects</h2>';
 if (empty($projects)) {

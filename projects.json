@@ -1,0 +1,14 @@
+{
+    "projects": {
+        "acme-store": {
+            "label": "Acme Store",
+            "path": "/demo/acme-store",
+            "capabilities": { "conductor": true, "dpa": { "config": "/demo/acme-store/project.json" } }
+        },
+        "field-notes": {
+            "label": "Field Notes",
+            "path": "/demo/field-notes",
+            "capabilities": { "conductor": true }
+        }
+    }
+}

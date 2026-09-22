@@ -6,6 +6,7 @@ require __DIR__ . '/../../shared/framework/framework.php';
 require_once __DIR__ . '/../lib.php';
 require_once __DIR__ . '/../../conductor/lib.php';   // spawn_tmux_agent
 fw_require_auth();
+if ($_SERVER['REQUEST_METHOD'] === 'POST') fw_demo_block('Saving');
 
 // Available agent role templates (conductor/agent-templates/<name>/CLAUDE.md).
 $agentTemplates = [];

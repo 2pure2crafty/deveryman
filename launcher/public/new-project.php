@@ -5,6 +5,7 @@ define('DEVERYMAN_CONFIG', getenv('DEVERYMAN_CONFIG') ?: '/etc/default/conductor
 require __DIR__ . '/../../shared/framework/framework.php';
 require __DIR__ . '/../lib.php';
 fw_require_auth();
+if ($_SERVER['REQUEST_METHOD'] === 'POST') fw_demo_block('Saving');
 
 /* ---------- GET: the form ---------- */
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {

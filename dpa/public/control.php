@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/../lib.php';
 fw_require_auth();
+fw_demo_block('Pipeline gate controls');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);

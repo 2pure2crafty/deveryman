@@ -6,6 +6,7 @@ require __DIR__ . '/../../shared/framework/framework.php';
 require __DIR__ . '/../canvas.php';   // pulls in registry.php
 fw_require_auth();
 header('Content-Type: application/json');
+if (fw_demo()) { echo json_encode(['ok'=>false,'demo'=>true,'errors'=>['Saving pipelines is disabled in this demo (nothing is connected).']]); exit; }
 
 function fail(array $errors): void { echo json_encode(['ok' => false, 'errors' => $errors]); exit; }
 

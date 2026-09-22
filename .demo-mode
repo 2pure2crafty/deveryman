@@ -1,0 +1,1 @@
+This file switches D'everyman into public demo mode (see shared/framework/framework.php fw_demo). Present only on the demo branch.
