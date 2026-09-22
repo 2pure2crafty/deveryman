@@ -72,7 +72,7 @@ function fw_demo_block(string $action = 'That action'): void {
     echo '<h1>Demo mode</h1>';
     echo '<div class="card"><strong>' . fw_h($action) . '</strong>'
        . '<p class="desc">' . fw_h($msg) . '</p>'
-       . '<a class="btn" href="/">&larr; Back to the demo</a></div>';
+       . '<a class="btn" href="./">&larr; Back to the demo</a></div>';
     fw_footer();
     exit;
 }
@@ -215,6 +215,7 @@ function fw_header(string $title, string $home = ''): void {
         . 'border-radius:6px;padding:10px;font-size:0.82rem;color:#cfcfcf;max-height:360px;overflow:auto}'
         . '.back{display:inline-block;margin-bottom:10px;color:#888;text-decoration:none}'
         . '</style></head><body>';
+    if ($home === '/') $home = './';
     if ($home !== '') echo '<a class="back" href="' . fw_h($home) . '">&larr; ' . fw_h(DEVERYMAN_APP) . '</a>';
 }
 

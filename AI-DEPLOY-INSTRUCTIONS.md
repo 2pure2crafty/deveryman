@@ -62,12 +62,34 @@ so it is safe to expose publicly.
 - Nothing needs write permissions. (PHP sessions are used only for form tokens; the
   default session path on shared hosts is fine.)
 
-## If you cannot change the document root
+## If you cannot change the document root (shared hosting, fixed `public_html`)
 
-This app expects the web root to be the `launcher/public` folder specifically. If your
-host only serves from a fixed `public_html` that you cannot repoint, **do not try to
-move the files around**, the internal include paths are relative and it will break.
-Instead, tell the person who gave you this package that you need a "flattened" build,
-and they can generate one for `public_html`.
+Common case: the host serves from a fixed `public_html/` and you are dropping this
+into a subfolder (e.g. `public_html/portfolio/deveryman/`) with no way to repoint the
+document root. **Do not move the app's files around**, the include paths depend on the
+folder layout. Instead, on Apache/LiteSpeed, add a **one-file `.htaccess`** at the top
+of the uploaded app folder that internally serves everything from `launcher/public`
+while the browser URL stays on your subfolder:
+
+```apache
+# .htaccess  (place it inside the uploaded app folder, next to this file)
+RewriteEngine On
+# Adjust this path prefix to match where the app lives under your web root.
+# Example for  https://yoursite/portfolio/deveryman/  ->  /portfolio/deveryman/
+RewriteCond %{REQUEST_URI} !^/portfolio/deveryman/launcher/public/
+RewriteRule ^(.*)$ launcher/public/$1 [L]
+```
+
+The app's asset and link paths are all **relative**, so this works: `litegraph.css`,
+`litegraph.js`, `pipeline-canvas.js`, and the page links all resolve correctly under
+the subpath. (An earlier build had a couple of root-absolute `/vendor` and `/js`
+references that 404'd under a subpath; those are fixed in this package.)
+
+Verify after: open `.../pipeline-builder.php?template=dpa-standard` and confirm
+`litegraph.css`, `litegraph.js`, and `pipeline-canvas.js` all return `200` and the
+node canvas draws.
+
+If you are on nginx (no `.htaccess`), either set the document root to `launcher/public`
+(preferred) or add an equivalent internal rewrite in the server block.
 
 That's everything. Enjoy.

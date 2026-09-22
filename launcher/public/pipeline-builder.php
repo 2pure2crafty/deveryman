@@ -28,7 +28,7 @@ $csrf = fw_csrf_token();
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#111111">
 <title><?= fw_h($model['label']) ?> - pipeline builder</title>
-<link rel="stylesheet" href="/vendor/litegraph/litegraph.css">
+<link rel="stylesheet" href="vendor/litegraph/litegraph.css">
 <style>
 html,body{margin:0;background:#111;color:#eee;font-family:system-ui,-apple-system,sans-serif;overflow:hidden}
 #bar{height:42px;display:flex;align-items:center;gap:14px;padding:0 12px;box-sizing:border-box;
@@ -65,8 +65,8 @@ canvas{display:block}
   </span>
 </div>
 <canvas id="c"></canvas>
-<script src="/vendor/litegraph/litegraph.js"></script>
-<script src="/js/pipeline-canvas.js"></script>
+<script src="vendor/litegraph/litegraph.js"></script>
+<script src="js/pipeline-canvas.js"></script>
 <script>
   DeverymanCanvas.render({
     model: <?= $modelJson ?>,
