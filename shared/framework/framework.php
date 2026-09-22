@@ -168,6 +168,10 @@ function fw_header(string $title, string $home = ''): void {
         . 'border-radius:6px;padding:10px;font-size:0.82rem;color:#cfcfcf;max-height:360px;overflow:auto}'
         . '.back{display:inline-block;margin-bottom:10px;color:#888;text-decoration:none}'
         . '</style></head><body>';
+    // A home link of '/' is the app root; render it relative ('./') so it resolves
+    // whether the app owns the site root or is served under a subpath (e.g. a
+    // portfolio subfolder). All other values are passed through as given.
+    if ($home === '/') $home = './';
     if ($home !== '') echo '<a class="back" href="' . fw_h($home) . '">&larr; ' . fw_h(DEVERYMAN_APP) . '</a>';
 }
 

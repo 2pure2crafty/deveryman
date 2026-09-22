@@ -41,5 +41,5 @@ echo '<div class="card" style="opacity:0.6"><strong>More AI models and services<
     . '<div class="meta">Additional providers (other models, hosted services) will slot in '
     . 'here. Claude is the first.</div></div>';
 
-echo '<a class="back" href="/">&larr; ' . fw_h(DEVERYMAN_APP) . '</a>';
+echo '<a class="back" href="./">&larr; ' . fw_h(DEVERYMAN_APP) . '</a>';
 fw_footer();
